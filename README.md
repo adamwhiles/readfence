@@ -18,12 +18,47 @@ A clean, modern Markdown viewer built for developers and Linux users. Written in
 
 ## Installation
 
+Prebuilt binaries and installers are published on the [GitHub Releases](https://github.com/adamwhiles/readfence/releases/latest) page.
+
+### Windows
+
+Windows releases currently target `x86_64-pc-windows-msvc`.
+
+- Download `readfence-x86_64-pc-windows-msvc.msi` from the latest release and run the installer.
+- If you prefer a portable build, download `readfence-x86_64-pc-windows-msvc.zip` and run `readfence.exe` directly.
+
+The MSI is built in the release pipeline with WiX and includes normal Windows installer behavior such as add/remove programs integration.
+
+### macOS
+
+macOS releases are built for both Apple Silicon (`aarch64-apple-darwin`) and Intel (`x86_64-apple-darwin`).
+
+Install the latest release with the generated shell installer:
+
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/adamwhiles/readfence/releases/latest/download/readfence-installer.sh | sh
+```
+
+By default, the installer places `readfence` in `$CARGO_HOME/bin`, or `~/.cargo/bin` if `CARGO_HOME` is not set.
+
+### Linux
+
+Linux releases are built for `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu`.
+
+Install the latest release with the generated shell installer:
+
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/adamwhiles/readfence/releases/latest/download/readfence-installer.sh | sh
+```
+
+By default, the installer places `readfence` in `$CARGO_HOME/bin`, or `~/.cargo/bin` if `CARGO_HOME` is not set.
+
 ### From source
 
 Requires [Rust](https://rustup.rs) 1.85 or later.
 
 ```sh
-git clone https://github.com/username/readfence
+git clone https://github.com/adamwhiles/readfence
 cd readfence
 cargo build --release
 ./target/release/readfence
@@ -31,7 +66,7 @@ cargo build --release
 
 The binary will be at `target/release/readfence` (or `readfence.exe` on Windows).
 
-### Linux dependencies
+### Linux build dependencies
 
 On Linux, `rfd` (the file dialog library) requires GTK 3 development headers:
 
@@ -72,13 +107,6 @@ Select a theme from the dropdown in the toolbar. Available themes include:
 - **Tokyo Night** — a clean dark theme inspired by Tokyo at night
 - **Catppuccin Mocha** — soothing pastel dark theme
 - **Oxocarbon** — IBM carbon design inspired
-
-## Architecture
-
-```
-src/
-└── main.rs   — application state, update logic, and view composition
-```
 
 Built with the [Elm architecture](https://guide.elm-lang.org/architecture/) pattern as implemented by iced:
 
