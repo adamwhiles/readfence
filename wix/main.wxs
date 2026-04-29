@@ -1,0 +1,178 @@
+<?xml version='1.0' encoding='windows-1252'?>
+<Wix xmlns='http://schemas.microsoft.com/wix/2006/wi'>
+
+    <Product
+        Id='*'
+        Name='Readfence'
+        UpgradeCode='04A82975-A2C4-4F47-90C7-951F2401DC6D'
+        Manufacturer='SignalPeak Media LLC'
+        Language='1033'
+        Codepage='1252'
+        Version='$(var.Version)'>
+
+        <Package Id='*'
+            Keywords='Installer'
+            Description='A clean, modern Markdown viewer for developers'
+            Manufacturer='SignalPeak Media LLC'
+            InstallerVersion='450'
+            Languages='1033'
+            Compressed='yes'
+            InstallScope='perUser'
+            SummaryCodepage='1252'
+            />
+
+        <MajorUpgrade
+            Schedule='afterInstallInitialize'
+            DowngradeErrorMessage='A newer version of [ProductName] is already installed. Setup will now exit.'/>
+
+        <Media Id='1' Cabinet='media1.cab' EmbedCab='yes' DiskPrompt='CD-ROM #1'/>
+        <Property Id='DiskPrompt' Value='Readfence Installation'/>
+
+        <Directory Id='TARGETDIR' Name='SourceDir'>
+
+            <!-- Per-user install: %LOCALAPPDATA%\Programs\Readfence\bin -->
+            <Directory Id='LocalAppDataFolder'>
+                <Directory Id='UserProgramsFolder' Name='Programs'>
+                    <Directory Id='APPLICATIONFOLDER' Name='Readfence'>
+                        <Directory Id='Bin' Name='bin'/>
+                    </Directory>
+                </Directory>
+            </Directory>
+
+            <!-- User Start Menu -->
+            <Directory Id='ProgramMenuFolder'>
+                <Directory Id='ApplicationProgramsFolder' Name='Readfence'/>
+            </Directory>
+
+            <!-- User Desktop -->
+            <Directory Id='DesktopFolder'/>
+
+        </Directory>
+
+        <!--
+          Per-user installs require HKCU registry KeyPaths for all components
+          that install to the user profile (ICE38). File/env KeyPaths are not allowed.
+        -->
+
+        <!-- Binary -->
+        <DirectoryRef Id='Bin'>
+            <Component Id='binary0' Guid='AB7F89D5-88EB-45F2-A78A-093C9A270C89'>
+                <File Id='exe0' Name='readfence.exe' DiskId='1'
+                      Source='$(var.CargoTargetBinDir)\readfence.exe'/>
+                <RegistryValue Root='HKCU'
+                    Key='Software\SignalPeak Media\Readfence'
+                    Name='installed' Type='integer' Value='1' KeyPath='yes'/>
+            </Component>
+        </DirectoryRef>
+
+        <!-- PATH env var (optional feature) -->
+        <DirectoryRef Id='Bin'>
+            <Component Id='Path' Guid='22F98BE6-E414-4EF1-A2C6-6B67650A1A6E'>
+                <Environment Id='PATH' Name='PATH' Value='[Bin]'
+                    Permanent='no' Part='last' Action='set' System='no'/>
+                <RegistryValue Root='HKCU'
+                    Key='Software\SignalPeak Media\Readfence'
+                    Name='pathAdded' Type='integer' Value='1' KeyPath='yes'/>
+            </Component>
+        </DirectoryRef>
+
+        <!--
+          RemoveFolder entries for all user-profile directories (ICE64).
+          Folders are only actually deleted on uninstall if they are empty.
+        -->
+        <DirectoryRef Id='APPLICATIONFOLDER'>
+            <Component Id='ApplicationFolderCleanup' Guid='*'>
+                <RegistryValue Root='HKCU'
+                    Key='Software\SignalPeak Media\Readfence'
+                    Name='cleanup' Type='integer' Value='1' KeyPath='yes'/>
+                <RemoveFolder Id='RemoveBin'               Directory='Bin'               On='uninstall'/>
+                <RemoveFolder Id='RemoveApplicationFolder' Directory='APPLICATIONFOLDER'  On='uninstall'/>
+                <RemoveFolder Id='RemoveUserPrograms'      Directory='UserProgramsFolder' On='uninstall'/>
+            </Component>
+        </DirectoryRef>
+
+        <!-- Start Menu shortcut (always installed) -->
+        <DirectoryRef Id='ApplicationProgramsFolder'>
+            <Component Id='ApplicationShortcut' Guid='*'>
+                <Shortcut Id='ApplicationStartMenuShortcut'
+                    Name='Readfence'
+                    Description='A clean markdown viewer for developers'
+                    Target='[APPLICATIONFOLDER]bin\readfence.exe'
+                    WorkingDirectory='Bin'
+                    Icon='ProductICO'/>
+                <RemoveFolder Id='RemoveApplicationProgramsFolder' On='uninstall'/>
+                <RegistryValue Root='HKCU'
+                    Key='Software\SignalPeak Media\Readfence'
+                    Name='startMenuShortcut' Type='integer' Value='1' KeyPath='yes'/>
+            </Component>
+        </DirectoryRef>
+
+        <!-- Desktop shortcut (optional) -->
+        <DirectoryRef Id='DesktopFolder'>
+            <Component Id='ApplicationShortcutDesktop' Guid='*'>
+                <Shortcut Id='ApplicationDesktopShortcut'
+                    Name='Readfence'
+                    Description='A clean markdown viewer for developers'
+                    Target='[APPLICATIONFOLDER]bin\readfence.exe'
+                    WorkingDirectory='Bin'
+                    Icon='ProductICO'/>
+                <RegistryValue Root='HKCU'
+                    Key='Software\SignalPeak Media\Readfence'
+                    Name='desktopShortcut' Type='integer' Value='1' KeyPath='yes'/>
+            </Component>
+        </DirectoryRef>
+
+        <Feature
+            Id='Binaries'
+            Title='Application'
+            Description='Installs Readfence and creates a Start Menu shortcut.'
+            Level='1'
+            ConfigurableDirectory='APPLICATIONFOLDER'
+            AllowAdvertise='no'
+            Display='expand'
+            Absent='disallow'>
+
+            <ComponentRef Id='binary0'/>
+            <ComponentRef Id='ApplicationFolderCleanup'/>
+            <ComponentRef Id='ApplicationShortcut'/>
+
+            <Feature
+                Id='DesktopShortcut'
+                Title='Desktop Shortcut'
+                Description='Create a shortcut on the Desktop.'
+                Level='1'
+                Absent='allow'>
+                <ComponentRef Id='ApplicationShortcutDesktop'/>
+            </Feature>
+
+            <Feature
+                Id='Environment'
+                Title='PATH Environment Variable'
+                Description='Add the install location of [ProductName] to the user PATH environment variable. This allows [ProductName] to be called from the command line.'
+                Level='1'
+                Absent='allow'>
+                <ComponentRef Id='Path'/>
+            </Feature>
+
+        </Feature>
+
+        <SetProperty Id='ARPINSTALLLOCATION' Value='[APPLICATIONFOLDER]' After='CostFinalize'/>
+
+        <Icon Id='ProductICO' SourceFile='assets\icon.ico'/>
+        <Property Id='ARPPRODUCTICON' Value='ProductICO'/>
+
+        <Property Id='ARPHELPLINK' Value='https://github.com/adamwhiles/readfence'/>
+
+        <UI>
+            <UIRef Id='WixUI_FeatureTree'/>
+            <Publish Dialog='WelcomeDlg' Control='Next' Event='NewDialog' Value='CustomizeDlg' Order='99'>1</Publish>
+            <Publish Dialog='CustomizeDlg' Control='Back' Event='NewDialog' Value='WelcomeDlg' Order='99'>1</Publish>
+        </UI>
+
+        <!--<WixVariable Id='WixUILicenseRtf' Value='Relative\Path\to\Eula.rtf'/>-->
+        <!--<WixVariable Id='WixUIBannerBmp' Value='wix\Banner.bmp'/>-->
+        <!--<WixVariable Id='WixUIDialogBmp' Value='wix\Dialog.bmp'/>-->
+
+    </Product>
+
+</Wix>
