@@ -124,6 +124,36 @@ Built with the [Elm architecture](https://guide.elm-lang.org/architecture/) patt
 | `open`  | Open URLs in the system browser  |
 | `tokio` | Async file I/O                   |
 
+## Roadmap
+
+### Up next
+
+| Feature | Description |
+|---|---|
+| **Auto-reload on file change** | Watch the open file and reload instantly when saved — live preview alongside your editor |
+| **Drag and drop to open** | Drop any `.md` file onto the window to open it without using the file dialog |
+| **Recent files** | Quickly reopen previously viewed files from a persistent recent files list |
+| **Zoom with Ctrl+scroll** | Scale font size with the scroll wheel while holding Ctrl |
+
+### Planned
+
+| Feature | Description |
+|---|---|
+| **Table of contents panel** | Auto-generated heading outline in the sidebar with jump-to-section navigation |
+| **Find in document** | Ctrl+F search bar that highlights matches in rendered or source view |
+| **Local image rendering** | Render images referenced by relative path so `![](./img.png)` works as expected |
+| **Persistent settings** | Remember window size, theme, font size, and last open files across restarts |
+
+### On the radar
+
+| Feature | Description |
+|---|---|
+| **Open folder** | Open an entire directory and browse all Markdown files from the sidebar |
+| **YAML front matter support** | Detect and display front matter (Hugo, Jekyll, Obsidian) cleanly instead of as raw text |
+| **Word count & reading time** | Status bar showing word count and estimated reading time for the open document |
+
+Have a feature request? [Open an issue](https://github.com/adamwhiles/readfence/issues) to discuss it.
+
 ## Contributing
 
 Contributions are welcome. Please open an issue to discuss significant changes before submitting a pull request.
