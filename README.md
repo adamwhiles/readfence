@@ -2,7 +2,7 @@
 
 A clean, modern Markdown viewer built for developers and Linux users. Written in Rust using the [iced](https://iced.rs) GUI library.
 
-![Readfence screenshot placeholder](docs/screenshot.png)
+![Readfence screenshot placeholder](https://readfence.com/screenshot.png)
 
 ## Features
 
