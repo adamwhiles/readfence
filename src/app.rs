@@ -6,6 +6,9 @@ use iced::{
     widget::{markdown, text_editor},
 };
 use std::path::PathBuf;
+use crate::files::file_watcher;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
 pub struct App {
     pub files: Vec<OpenFile>,
@@ -23,6 +26,7 @@ pub struct OpenFile {
     pub content: String,
     pub items: Vec<markdown::Item>,
     pub editor_content: text_editor::Content,
+    pub last_modified: Option<std::time::SystemTime>,
 }
 
 #[derive(Default, Clone, Copy, PartialEq)]
@@ -76,7 +80,7 @@ impl App {
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
-        event::listen_with(|ev, _status, _window| match ev {
+        let keyboard = event::listen_with(|ev, _status, _window| match ev {
             Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
                 let ctrl = modifiers.control();
                 match key.as_ref() {
@@ -90,6 +94,14 @@ impl App {
                 }
             }
             _ => None,
-        })
+        });
+
+        let mut hasher = DefaultHasher::new();
+        for f in &self.files {
+            f.path.hash(&mut hasher);
+        }
+        let path_hash = hasher.finish();
+
+        Subscription::batch(vec![keyboard, file_watcher(path_hash)])
     }
 }

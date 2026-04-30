@@ -11,13 +11,13 @@ impl App {
 
             Message::FilesLoaded(files) => {
                 let before = self.files.len();
-                for (path, content) in files {
+                for (path, content, mtime) in files {
                     if self.files.iter().any(|f| f.path == path) {
                         continue;
                     }
                     let items = markdown::parse(&content).collect();
                     let editor_content = text_editor::Content::with_text(&content);
-                    self.files.push(OpenFile { path, content, items, editor_content });
+                    self.files.push(OpenFile { path, content, items, editor_content, last_modified: mtime });
                 }
                 if self.files.len() > before {
                     self.active = self.files.len() - 1;
@@ -92,6 +92,60 @@ impl App {
             }
 
             Message::CopyCode(code) => clipboard::write(code),
+
+            Message::WatchTick => {
+                let tasks: Vec<Task<Message>> = self.files
+                    .iter()
+                    .enumerate()
+                    .map(|(i, file)| {
+                        let path = file.path.clone();
+                        let last = file.last_modified;
+                        Task::perform(
+                            async move {
+                                let meta = tokio::fs::metadata(&path).await.ok()?;
+                                let mtime = meta.modified().ok()?;
+                                Some((i, mtime))
+                            },
+                            move |result| match result {
+                                Some((i, mtime)) if last.map_or(false, |l| mtime > l) => {
+                                    Message::FileChanged(i, mtime)
+                                }
+                                _ => Message::NoOp,
+                            },
+                        )
+                    })
+                    .collect();
+                Task::batch(tasks)
+            }
+
+            Message::FileChanged(i, mtime) => {
+                let path = match self.files.get(i) {
+                    Some(f) => f.path.clone(),
+                    None => return Task::none(),
+                };
+                Task::perform(
+                    async move {
+                        let content = tokio::fs::read_to_string(&path).await.ok()?;
+                        Some((i, content, mtime))
+                    },
+                    |result| match result {
+                        Some((i, content, mtime)) => Message::FileReloaded(i, content, mtime),
+                        None => Message::NoOp,
+                    },
+                )
+            }
+
+            Message::FileReloaded(i, content, mtime) => {
+                if let Some(file) = self.files.get_mut(i) {
+                    file.items = markdown::parse(&content).collect();
+                    file.editor_content = text_editor::Content::with_text(&content);
+                    file.last_modified = Some(mtime);
+                    file.content = content;
+                }
+                Task::none()
+            }
+
+            Message::NoOp => Task::none(),
         }
     }
 }
