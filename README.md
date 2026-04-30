@@ -1,3 +1,8 @@
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Latest Release](https://img.shields.io/github/v/release/adamwhiles/readfence)](https://github.com/adamwhiles/readfence/releases/latest)
+[![Build](https://img.shields.io/github/actions/workflow/status/adamwhiles/readfence/release.yml?label=build)](https://github.com/adamwhiles/readfence/actions)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](https://github.com/adamwhiles/readfence/releases/latest)
+
 # Readfence
 
 A clean, modern Markdown viewer built for developers and Linux users. Written in Rust using the [iced](https://iced.rs) GUI library.
