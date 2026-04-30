@@ -1,6 +1,6 @@
 [package]
 name = "readfence"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 description = "A clean, modern Markdown viewer for developers"
 authors = ["SignalPeak Media LLC"]
