@@ -131,11 +131,16 @@ Built with the [Elm architecture](https://guide.elm-lang.org/architecture/) patt
 
 ## Roadmap
 
+### Recently shipped
+
+| Feature | Description |
+|---|---|
+| ✅ **Auto-reload on file change** | Watches open files and reloads instantly when saved — live preview alongside your editor |
+
 ### Up next
 
 | Feature | Description |
 |---|---|
-| **Auto-reload on file change** | Watch the open file and reload instantly when saved — live preview alongside your editor |
 | **Drag and drop to open** | Drop any `.md` file onto the window to open it without using the file dialog |
 | **Recent files** | Quickly reopen previously viewed files from a persistent recent files list |
 | **Zoom with Ctrl+scroll** | Scale font size with the scroll wheel while holding Ctrl |
