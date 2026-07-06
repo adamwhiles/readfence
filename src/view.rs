@@ -397,7 +397,6 @@ impl App {
             .spacing(22),
         )
         .width(Fill)
-        .max_width(980)
         .padding([30, 38])
         .style(style_panel);
 
