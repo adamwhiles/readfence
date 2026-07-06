@@ -6,11 +6,11 @@ use crate::styles::{
     style_sidebar, style_status_bar, style_subtle_panel, style_toolbar,
 };
 use iced::{
-    widget::{
-        button, column, container, markdown, pick_list, row, rule, scrollable, text, text_editor,
-        Space,
-    },
     Border, Center, Color, Element, Fill, Font, Theme,
+    widget::{
+        Space, button, column, container, markdown, pick_list, row, rule, scrollable, text,
+        text_editor,
+    },
 };
 use std::path::Path;
 
@@ -537,7 +537,7 @@ impl App {
                     weight: iced::font::Weight::Bold,
                     ..Font::DEFAULT
                 }),
-                text("A polished Markdown reading desk with live reload, source view, and theme-aware presentation.")
+                text("A polished Markdown reading desk with live reload, drag-and-drop opening, source view, and theme-aware presentation.")
                     .size(16)
                     .style(|theme: &Theme| text::Style {
                         color: Some(Color {

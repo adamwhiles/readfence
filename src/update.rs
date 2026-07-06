@@ -1,13 +1,17 @@
 use crate::app::{App, OpenFile, ViewMode};
+use crate::files::{load_files, load_paths};
 use crate::messages::Message;
-use crate::files::load_files;
-use iced::{Task, clipboard, window};
 use iced::widget::{markdown, text_editor};
+use iced::{Task, clipboard, window};
 
 impl App {
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::OpenDialog => Task::perform(load_files(), Message::FilesLoaded),
+
+            Message::FileDropped(path) => {
+                Task::perform(load_paths(vec![path]), Message::FilesLoaded)
+            }
 
             Message::FilesLoaded(files) => {
                 let before = self.files.len();
@@ -17,7 +21,13 @@ impl App {
                     }
                     let items = markdown::parse(&content).collect();
                     let editor_content = text_editor::Content::with_text(&content);
-                    self.files.push(OpenFile { path, content, items, editor_content, last_modified: mtime });
+                    self.files.push(OpenFile {
+                        path,
+                        content,
+                        items,
+                        editor_content,
+                        last_modified: mtime,
+                    });
                 }
                 if self.files.len() > before {
                     self.active = self.files.len() - 1;
@@ -94,7 +104,8 @@ impl App {
             Message::CopyCode(code) => clipboard::write(code),
 
             Message::WatchTick => {
-                let tasks: Vec<Task<Message>> = self.files
+                let tasks: Vec<Task<Message>> = self
+                    .files
                     .iter()
                     .enumerate()
                     .map(|(i, file)| {

@@ -1,14 +1,14 @@
+use crate::files::file_watcher;
 use crate::messages::Message;
 use iced::{
-    Event, Subscription, Task, Theme,
-    event,
-    keyboard::{self, key::Named, Key},
+    Event, Subscription, Task, Theme, event,
+    keyboard::{self, Key, key::Named},
     widget::{markdown, text_editor},
+    window,
 };
-use std::path::PathBuf;
-use crate::files::file_watcher;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
+use std::path::PathBuf;
 
 pub struct App {
     pub files: Vec<OpenFile>,
@@ -93,6 +93,7 @@ impl App {
                     _ => None,
                 }
             }
+            Event::Window(window::Event::FileDropped(path)) => Some(Message::FileDropped(path)),
             _ => None,
         });
 

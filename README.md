@@ -14,6 +14,7 @@ A clean, modern Markdown viewer built for developers and Linux users. Written in
 - **Rendered Markdown by default** — beautifully formatted output with heading hierarchy, code blocks, inline code, bold, italic, links, and blockquotes
 - **Source view** — toggle to see raw Markdown at any time
 - **Multi-file sidebar** — open multiple files and switch between them; hide the sidebar for a distraction-free reading experience
+- **Drag and drop opening** — drop `.md`, `.markdown`, or `.txt` files onto the window to open them instantly
 - **Fullscreen / maximized mode** — one click or `F11` for focused reading
 - **Adjustable font size** — increase or decrease with `Ctrl+=` / `Ctrl+-`
 - **Rich theme library** — powered by iced's built-in theme system: Dark, Light, Dracula, Nord, Gruvbox, Solarized, Tokyo Night, Catppuccin, Oxocarbon, and more
@@ -88,7 +89,7 @@ sudo pacman -S gtk3
 
 ## Usage
 
-Launch Readfence and use the **Open** button (or `Ctrl+O`) to open one or more Markdown files.
+Launch Readfence and use the **Open** button (or `Ctrl+O`) to open one or more Markdown files. You can also drag `.md`, `.markdown`, or `.txt` files onto the window to open them directly.
 
 ### Keyboard shortcuts
 
@@ -136,12 +137,12 @@ Built with the [Elm architecture](https://guide.elm-lang.org/architecture/) patt
 | Feature | Description |
 |---|---|
 | ✅ **Auto-reload on file change** | Watches open files and reloads instantly when saved — live preview alongside your editor |
+| ✅ **Drag and drop to open** | Drop Markdown or text files onto the window to open them without using the file dialog |
 
 ### Up next
 
 | Feature | Description |
 |---|---|
-| **Drag and drop to open** | Drop any `.md` file onto the window to open it without using the file dialog |
 | **Recent files** | Quickly reopen previously viewed files from a persistent recent files list |
 | **Zoom with Ctrl+scroll** | Scale font size with the scroll wheel while holding Ctrl |
 

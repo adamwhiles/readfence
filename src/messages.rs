@@ -5,6 +5,7 @@ use std::time::SystemTime;
 #[derive(Debug, Clone)]
 pub enum Message {
     OpenDialog,
+    FileDropped(PathBuf),
     FilesLoaded(Vec<(PathBuf, String, Option<SystemTime>)>),
     SelectFile(usize),
     CloseFile(usize),
