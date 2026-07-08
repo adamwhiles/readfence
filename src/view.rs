@@ -6,7 +6,7 @@ use crate::styles::{
     style_sidebar, style_status_bar, style_subtle_panel, style_toolbar,
 };
 use iced::{
-    Border, Center, Color, Element, Fill, Font, Theme,
+    Border, Center, Color, Element, Fill, Font, Pixels, Theme, border, padding,
     widget::{
         Space, button, column, container, markdown, pick_list, row, rule, scrollable, text,
         text_editor,
@@ -329,10 +329,7 @@ impl App {
     }
 
     fn view_rendered<'a>(&'a self, file: &'a OpenFile) -> Element<'a, Message> {
-        let settings = markdown::Settings::with_text_size(
-            self.font_size,
-            markdown::Style::from_palette(self.theme.palette()),
-        );
+        let settings = self.markdown_settings();
 
         let items = &file.items;
         let mut elements: Vec<Element<'a, Message>> = Vec::new();
@@ -381,6 +378,7 @@ impl App {
             .align_y(Center),
             row![
                 badge(format!("{} words", word_count(&file.content))),
+                badge(format!("{} min read", reading_time_minutes(&file.content))),
                 badge(format!("{} lines", line_count(&file.content))),
                 badge(format!("{}px text", self.font_size as u32)),
             ]
@@ -392,12 +390,12 @@ impl App {
             column![
                 document_header,
                 rule::horizontal(1),
-                column(elements).spacing(10),
+                column(elements).spacing(16),
             ]
-            .spacing(22),
+            .spacing(26),
         )
         .width(Fill)
-        .padding([30, 38])
+        .padding([34, 44])
         .style(style_panel);
 
         scrollable(
@@ -409,6 +407,35 @@ impl App {
         .width(Fill)
         .height(Fill)
         .into()
+    }
+
+    fn markdown_settings(&self) -> markdown::Settings {
+        let palette = self.theme.extended_palette();
+        let base_size = self.font_size.max(15.0);
+        let mut style = markdown::Style::from_palette(self.theme.palette());
+
+        style.link_color = palette.primary.strong.color;
+        style.inline_code_color = palette.primary.strong.color;
+        style.inline_code_highlight = markdown::Highlight {
+            background: Color {
+                a: 0.12,
+                ..palette.primary.base.color
+            }
+            .into(),
+            border: border::rounded(5),
+        };
+        style.inline_code_padding = padding::left(4).right(4).top(1).bottom(1);
+
+        let mut settings = markdown::Settings::with_text_size(base_size, style);
+        settings.h1_size = Pixels(base_size * 1.85);
+        settings.h2_size = Pixels(base_size * 1.55);
+        settings.h3_size = Pixels(base_size * 1.32);
+        settings.h4_size = Pixels(base_size * 1.16);
+        settings.h5_size = Pixels(base_size);
+        settings.h6_size = Pixels(base_size);
+        settings.code_size = Pixels((base_size * 0.86).max(13.0));
+        settings.spacing = Pixels(base_size * 1.05);
+        settings
     }
 
     fn view_code_block<'a>(
@@ -444,7 +471,13 @@ impl App {
         .style(|theme: &Theme| {
             let p = theme.extended_palette();
             container::Style {
-                background: Some(p.background.strong.color.into()),
+                background: Some(
+                    Color {
+                        a: 0.74,
+                        ..p.background.strong.color
+                    }
+                    .into(),
+                ),
                 border: Border {
                     radius: iced::border::Radius {
                         top_left: 8.0,
@@ -610,6 +643,10 @@ fn parent_label(path: &Path) -> String {
 
 fn word_count(content: &str) -> usize {
     content.split_whitespace().count()
+}
+
+fn reading_time_minutes(content: &str) -> usize {
+    word_count(content).div_ceil(225).max(1)
 }
 
 fn line_count(content: &str) -> usize {
