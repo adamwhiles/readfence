@@ -1,15 +1,19 @@
 use crate::app::{App, OpenFile, ViewMode};
+use crate::markdown_text::{LinkHighlighter, RenderedBlock, RenderedBlockKind};
 use crate::messages::Message;
+use crate::selection_group::{SelectionRegion, selection_group};
 use crate::styles::{
     style_app_background, style_badge, style_btn_ghost, style_btn_ghost_dim, style_btn_primary,
     style_btn_seg, style_btn_seg_active, style_file_active, style_file_inactive, style_panel,
-    style_sidebar, style_status_bar, style_subtle_panel, style_toolbar,
+    style_selectable_code, style_selectable_prose, style_sidebar, style_status_bar,
+    style_subtle_panel, style_toolbar,
 };
 use iced::{
-    Border, Center, Color, Element, Fill, Font, Pixels, Theme, border, padding,
+    Border, Center, Color, Element, Fill, Font, Theme,
+    advanced::text::highlighter,
+    keyboard::Key,
     widget::{
-        Space, button, column, container, markdown, pick_list, row, rule, scrollable, text,
-        text_editor,
+        Space, button, column, container, pick_list, row, rule, scrollable, text, text_editor,
     },
 };
 use std::path::Path;
@@ -329,31 +333,18 @@ impl App {
     }
 
     fn view_rendered<'a>(&'a self, file: &'a OpenFile) -> Element<'a, Message> {
-        let settings = self.markdown_settings();
-
-        let items = &file.items;
-        let mut elements: Vec<Element<'a, Message>> = Vec::new();
-        let mut i = 0;
-
-        while i < items.len() {
-            if let markdown::Item::CodeBlock { language, code, .. } = &items[i] {
-                elements.push(self.view_code_block(
-                    &items[i],
-                    language.as_deref(),
-                    code,
-                    settings.clone(),
-                ));
-                i += 1;
-            } else {
-                let start = i;
-                while i < items.len() && !matches!(&items[i], markdown::Item::CodeBlock { .. }) {
-                    i += 1;
-                }
-                let batch = markdown::view(&items[start..i], settings.clone())
-                    .map(|url| Message::LinkClicked(url.to_string()));
-                elements.push(batch.into());
-            }
+        let mut elements = Vec::with_capacity(file.rendered_blocks.len());
+        let mut selection_regions = Vec::with_capacity(file.rendered_blocks.len());
+        for (index, block) in file.rendered_blocks.iter().enumerate() {
+            selection_regions.push(match block.kind {
+                RenderedBlockKind::Code { .. } => SelectionRegion::code(index),
+                RenderedBlockKind::Rule => SelectionRegion::rule(),
+                RenderedBlockKind::Quote => SelectionRegion::quote(index),
+                _ => SelectionRegion::block(index),
+            });
+            elements.push(self.view_rendered_block(index, block));
         }
+        let rendered_blocks = selection_group(elements, selection_regions);
 
         let document_header = column![
             row![
@@ -373,6 +364,10 @@ impl App {
                 ]
                 .spacing(4),
                 Space::new().width(Fill),
+                button(text("Copy text").size(11))
+                    .on_press(Message::CopyRenderedText(file.rendered_text.clone()))
+                    .style(style_btn_ghost)
+                    .padding([5, 10]),
                 badge("Markdown".to_string()),
             ]
             .align_y(Center),
@@ -386,17 +381,11 @@ impl App {
         ]
         .spacing(14);
 
-        let document = container(
-            column![
-                document_header,
-                rule::horizontal(1),
-                column(elements).spacing(16),
-            ]
-            .spacing(26),
-        )
-        .width(Fill)
-        .padding([34, 44])
-        .style(style_panel);
+        let document =
+            container(column![document_header, rule::horizontal(1), rendered_blocks,].spacing(26))
+                .width(Fill)
+                .padding([34, 44])
+                .style(style_panel);
 
         scrollable(
             container(document)
@@ -409,44 +398,84 @@ impl App {
         .into()
     }
 
-    fn markdown_settings(&self) -> markdown::Settings {
-        let palette = self.theme.extended_palette();
-        let base_size = self.font_size.max(15.0);
-        let mut style = markdown::Style::from_palette(self.theme.palette());
-
-        style.link_color = palette.primary.strong.color;
-        style.inline_code_color = palette.primary.strong.color;
-        style.inline_code_highlight = markdown::Highlight {
-            background: Color {
-                a: 0.12,
-                ..palette.primary.base.color
+    fn view_rendered_block<'a>(
+        &'a self,
+        index: usize,
+        block: &'a RenderedBlock,
+    ) -> Element<'a, Message> {
+        match &block.kind {
+            RenderedBlockKind::Code { language } => {
+                self.view_selectable_code_block(index, language.as_deref(), block)
             }
-            .into(),
-            border: border::rounded(5),
-        };
-        style.inline_code_padding = padding::left(4).right(4).top(1).bottom(1);
+            RenderedBlockKind::Rule => container(rule::horizontal(1))
+                .width(Fill)
+                .padding([8, 0])
+                .into(),
+            kind => {
+                let size = match kind {
+                    RenderedBlockKind::Heading(1) => self.font_size.max(15.0) * 1.85,
+                    RenderedBlockKind::Heading(2) => self.font_size.max(15.0) * 1.55,
+                    RenderedBlockKind::Heading(3) => self.font_size.max(15.0) * 1.32,
+                    RenderedBlockKind::Heading(4) => self.font_size.max(15.0) * 1.16,
+                    RenderedBlockKind::Heading(_) => self.font_size.max(15.0),
+                    RenderedBlockKind::ListItem => self.font_size.max(15.0),
+                    RenderedBlockKind::Quote => self.font_size.max(15.0),
+                    RenderedBlockKind::Table => (self.font_size.max(15.0) * 0.92).max(13.0),
+                    RenderedBlockKind::Paragraph
+                    | RenderedBlockKind::Code { .. }
+                    | RenderedBlockKind::Rule => self.font_size.max(15.0),
+                };
 
-        let mut settings = markdown::Settings::with_text_size(base_size, style);
-        settings.h1_size = Pixels(base_size * 1.85);
-        settings.h2_size = Pixels(base_size * 1.55);
-        settings.h3_size = Pixels(base_size * 1.32);
-        settings.h4_size = Pixels(base_size * 1.16);
-        settings.h5_size = Pixels(base_size);
-        settings.h6_size = Pixels(base_size);
-        settings.code_size = Pixels((base_size * 0.86).max(13.0));
-        settings.spacing = Pixels(base_size * 1.05);
-        settings
+                let editor = text_editor(&block.content)
+                    .on_action(move |action| Message::RenderedBlockAction(index, action))
+                    .key_binding(rendered_key_binding)
+                    .size(size)
+                    .line_height(text::LineHeight::Relative(1.35))
+                    .wrapping(text::Wrapping::WordOrGlyph)
+                    .padding([2, 0])
+                    .style(style_selectable_prose)
+                    .highlight_with::<LinkHighlighter>(
+                        block.link_highlights(),
+                        link_highlight_format,
+                    );
+
+                match kind {
+                    RenderedBlockKind::Quote => container(editor)
+                        .width(Fill)
+                        .padding([2, 14])
+                        .style(|theme: &Theme| {
+                            let p = theme.extended_palette();
+                            container::Style {
+                                border: Border {
+                                    width: 0.0,
+                                    color: Color::TRANSPARENT,
+                                    radius: 0.0.into(),
+                                },
+                                background: Some(
+                                    Color {
+                                        a: 0.08,
+                                        ..p.primary.base.color
+                                    }
+                                    .into(),
+                                ),
+                                ..Default::default()
+                            }
+                        })
+                        .into(),
+                    _ => editor.into(),
+                }
+            }
+        }
     }
 
-    fn view_code_block<'a>(
+    fn view_selectable_code_block<'a>(
         &self,
-        item: &'a markdown::Item,
+        index: usize,
         language: Option<&'a str>,
-        code: &str,
-        settings: markdown::Settings,
+        block: &'a RenderedBlock,
     ) -> Element<'a, Message> {
         let copy_btn = button(text("Copy").size(11))
-            .on_press(Message::CopyCode(code.to_string()))
+            .on_press(Message::CopyCode(block.text.clone()))
             .style(style_btn_ghost)
             .padding([5, 10]);
 
@@ -491,8 +520,15 @@ impl App {
             }
         });
 
-        let code_view = markdown::view(std::slice::from_ref(item), settings)
-            .map(|url| Message::LinkClicked(url.to_string()));
+        let code_view = text_editor(&block.content)
+            .on_action(move |action| Message::RenderedBlockAction(index, action))
+            .key_binding(rendered_key_binding)
+            .font(Font::MONOSPACE)
+            .size((self.font_size.max(15.0) * 0.86).max(13.0))
+            .line_height(text::LineHeight::Relative(1.35))
+            .wrapping(text::Wrapping::None)
+            .padding([14, 16])
+            .style(style_selectable_code);
 
         container(column![header, code_view])
             .width(Fill)
@@ -651,4 +687,30 @@ fn reading_time_minutes(content: &str) -> usize {
 
 fn line_count(content: &str) -> usize {
     content.lines().count().max(1)
+}
+
+fn rendered_key_binding(key_press: text_editor::KeyPress) -> Option<text_editor::Binding<Message>> {
+    if key_press.modifiers.command() {
+        match key_press.key.as_ref() {
+            Key::Character("c") => {
+                return Some(text_editor::Binding::Custom(Message::CopyRenderedSelection));
+            }
+            Key::Character("a") => {
+                return Some(text_editor::Binding::Custom(Message::SelectAllRendered));
+            }
+            _ => {}
+        }
+    }
+
+    text_editor::Binding::from_key_press(key_press)
+}
+
+fn link_highlight_format(_highlight: &(), theme: &Theme) -> highlighter::Format<Font> {
+    highlighter::Format {
+        color: Some(theme.extended_palette().primary.strong.color),
+        font: Some(Font {
+            weight: iced::font::Weight::Semibold,
+            ..Font::DEFAULT
+        }),
+    }
 }

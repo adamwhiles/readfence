@@ -1,6 +1,6 @@
 [package]
 name = "readfence"
-version = "0.3.2"
+version = "0.3.3"
 edition = "2024"
 description = "A clean, modern Markdown viewer for developers"
 authors = ["SignalPeak Media LLC"]
@@ -22,7 +22,8 @@ name = "readfence"
 path = "src/main.rs"
 
 [dependencies]
-iced = { version = "0.14.0", features = ["markdown", "highlighter", "tokio"] }
+iced = { version = "0.14.0", features = ["advanced", "tokio"] }
+pulldown-cmark = "0.12.2"
 rfd = "0.17.2"
 open = "5"
 tokio = { version = "1", features = ["fs", "time"] }

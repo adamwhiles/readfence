@@ -2,7 +2,9 @@
 
   mod app;
   mod files;
+  mod markdown_text;
   mod messages;
+  mod selection_group;
   mod styles;
   mod update;
   mod view;

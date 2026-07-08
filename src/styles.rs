@@ -1,5 +1,5 @@
-use iced::widget::{button, container};
-use iced::{Border, Color, Shadow, Theme, Vector};
+use iced::widget::{button, container, text_editor};
+use iced::{Background, Border, Color, Shadow, Theme, Vector};
 
 pub fn style_app_background(theme: &Theme) -> container::Style {
     let p = theme.extended_palette();
@@ -68,6 +68,46 @@ pub fn style_subtle_panel(theme: &Theme) -> container::Style {
             width: 1.0,
         },
         ..Default::default()
+    }
+}
+
+pub fn style_selectable_prose(theme: &Theme, _status: text_editor::Status) -> text_editor::Style {
+    let p = theme.extended_palette();
+    text_editor::Style {
+        background: Background::Color(Color::TRANSPARENT),
+        border: Border {
+            width: 0.0,
+            ..Default::default()
+        },
+        placeholder: Color {
+            a: 0.48,
+            ..p.background.base.text
+        },
+        value: p.background.base.text,
+        selection: Color {
+            a: 0.42,
+            ..p.primary.base.color
+        },
+    }
+}
+
+pub fn style_selectable_code(theme: &Theme, _status: text_editor::Status) -> text_editor::Style {
+    let p = theme.extended_palette();
+    text_editor::Style {
+        background: Background::Color(p.background.strong.color),
+        border: Border {
+            width: 0.0,
+            ..Default::default()
+        },
+        placeholder: Color {
+            a: 0.48,
+            ..p.background.base.text
+        },
+        value: p.background.base.text,
+        selection: Color {
+            a: 0.46,
+            ..p.primary.base.color
+        },
     }
 }
 

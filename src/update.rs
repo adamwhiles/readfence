@@ -1,8 +1,9 @@
 use crate::app::{App, OpenFile, ViewMode};
 use crate::files::{load_files, load_paths};
+use crate::markdown_text::{rendered_blocks, selectable_text};
 use crate::messages::Message;
-use iced::widget::{markdown, text_editor};
-use iced::{Task, clipboard, window};
+use iced::widget::text_editor;
+use iced::{Point, Task, clipboard, window};
 
 impl App {
     pub fn update(&mut self, message: Message) -> Task<Message> {
@@ -19,13 +20,15 @@ impl App {
                     if self.files.iter().any(|f| f.path == path) {
                         continue;
                     }
-                    let items = markdown::parse(&content).collect();
                     let editor_content = text_editor::Content::with_text(&content);
+                    let rendered_text = selectable_text(&content);
+                    let rendered_blocks = rendered_blocks(&content);
                     self.files.push(OpenFile {
                         path,
                         content,
-                        items,
                         editor_content,
+                        rendered_text,
+                        rendered_blocks,
                         last_modified: mtime,
                     });
                 }
@@ -86,22 +89,107 @@ impl App {
                 window::latest().and_then(move |id| window::set_mode(id, mode))
             }
 
-            Message::LinkClicked(url) => {
-                let _ = open::that_detached(&url);
+            Message::EditorAction(action) => {
+                // Allow cursor movement and selection; silently drop text edits (read-only).
+                if !matches!(action, text_editor::Action::Edit(_))
+                    && let Some(file) = self.files.get_mut(self.active)
+                {
+                    file.editor_content.perform(action);
+                }
                 Task::none()
             }
 
-            Message::EditorAction(action) => {
+            Message::RenderedBlockAction(index, action) => {
                 // Allow cursor movement and selection; silently drop text edits (read-only).
-                if !matches!(action, text_editor::Action::Edit(_)) {
-                    if let Some(file) = self.files.get_mut(self.active) {
-                        file.editor_content.perform(action);
+                if !matches!(action, text_editor::Action::Edit(_))
+                    && let Some(file) = self.files.get_mut(self.active)
+                    && let Some(block) = file.rendered_blocks.get_mut(index)
+                {
+                    block.content.perform(action);
+                }
+                Task::none()
+            }
+
+            Message::RenderedCrossBlockSelection {
+                anchor,
+                target,
+                point,
+            } => {
+                if let Some(file) = self.files.get_mut(self.active) {
+                    let start = anchor.min(target);
+                    let end = anchor.max(target);
+                    let forward = target > anchor;
+                    let far_edge = Point::new(f32::MAX / 4.0, f32::MAX / 4.0);
+
+                    for (index, block) in file.rendered_blocks.iter_mut().enumerate() {
+                        if index < start || index > end {
+                            block
+                                .content
+                                .perform(text_editor::Action::Click(Point::ORIGIN));
+                        } else if index == anchor {
+                            block.content.perform(text_editor::Action::Drag(if forward {
+                                far_edge
+                            } else {
+                                Point::ORIGIN
+                            }));
+                        } else if index == target {
+                            block
+                                .content
+                                .perform(text_editor::Action::Click(if forward {
+                                    Point::ORIGIN
+                                } else {
+                                    far_edge
+                                }));
+                            block.content.perform(text_editor::Action::Drag(point));
+                        } else {
+                            block.content.perform(text_editor::Action::SelectAll);
+                        }
+                    }
+                }
+                Task::none()
+            }
+
+            Message::RenderedBlockClicked(index) => {
+                let url = self
+                    .files
+                    .get(self.active)
+                    .and_then(|file| file.rendered_blocks.get(index))
+                    .and_then(|block| block.link_at_cursor())
+                    .map(ToOwned::to_owned);
+
+                if let Some(url) = url {
+                    let _ = open::that_detached(url);
+                }
+                Task::none()
+            }
+
+            Message::CopyRenderedSelection => {
+                let selected = self.files.get(self.active).map(|file| {
+                    file.rendered_blocks
+                        .iter()
+                        .filter_map(|block| block.content.selection())
+                        .collect::<Vec<_>>()
+                        .join("\n\n")
+                });
+
+                match selected {
+                    Some(text) if !text.is_empty() => clipboard::write(text),
+                    _ => Task::none(),
+                }
+            }
+
+            Message::SelectAllRendered => {
+                if let Some(file) = self.files.get_mut(self.active) {
+                    for block in &mut file.rendered_blocks {
+                        block.content.perform(text_editor::Action::SelectAll);
                     }
                 }
                 Task::none()
             }
 
             Message::CopyCode(code) => clipboard::write(code),
+
+            Message::CopyRenderedText(text) => clipboard::write(text),
 
             Message::WatchTick => {
                 let tasks: Vec<Task<Message>> = self
@@ -118,7 +206,7 @@ impl App {
                                 Some((i, mtime))
                             },
                             move |result| match result {
-                                Some((i, mtime)) if last.map_or(false, |l| mtime > l) => {
+                                Some((i, mtime)) if last.is_some_and(|l| mtime > l) => {
                                     Message::FileChanged(i, mtime)
                                 }
                                 _ => Message::NoOp,
@@ -148,8 +236,9 @@ impl App {
 
             Message::FileReloaded(i, content, mtime) => {
                 if let Some(file) = self.files.get_mut(i) {
-                    file.items = markdown::parse(&content).collect();
                     file.editor_content = text_editor::Content::with_text(&content);
+                    file.rendered_text = selectable_text(&content);
+                    file.rendered_blocks = rendered_blocks(&content);
                     file.last_modified = Some(mtime);
                     file.content = content;
                 }

@@ -1,4 +1,4 @@
-use iced::{Theme, widget::text_editor};
+use iced::{Point, Theme, widget::text_editor};
 use std::path::PathBuf;
 use std::time::SystemTime;
 
@@ -15,9 +15,18 @@ pub enum Message {
     DecreaseFontSize,
     ThemeChanged(Theme),
     ToggleFullscreen,
-    LinkClicked(String),
     EditorAction(text_editor::Action),
+    RenderedBlockAction(usize, text_editor::Action),
+    RenderedCrossBlockSelection {
+        anchor: usize,
+        target: usize,
+        point: Point,
+    },
+    RenderedBlockClicked(usize),
+    CopyRenderedSelection,
+    SelectAllRendered,
     CopyCode(String),
+    CopyRenderedText(String),
     FileChanged(usize, SystemTime),
     FileReloaded(usize, String, SystemTime),
     NoOp,

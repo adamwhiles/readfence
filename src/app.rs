@@ -1,9 +1,10 @@
 use crate::files::file_watcher;
+use crate::markdown_text::RenderedBlock;
 use crate::messages::Message;
 use iced::{
     Event, Subscription, Task, Theme, event,
     keyboard::{self, Key, key::Named},
-    widget::{markdown, text_editor},
+    widget::text_editor,
     window,
 };
 use std::collections::hash_map::DefaultHasher;
@@ -24,8 +25,9 @@ pub struct OpenFile {
     pub path: PathBuf,
     #[allow(dead_code)]
     pub content: String,
-    pub items: Vec<markdown::Item>,
     pub editor_content: text_editor::Content,
+    pub rendered_text: String,
+    pub rendered_blocks: Vec<RenderedBlock>,
     pub last_modified: Option<std::time::SystemTime>,
 }
 
