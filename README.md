@@ -12,6 +12,8 @@ A clean, modern Markdown viewer built for developers and Linux users. Written in
 ## Features
 
 - **Rendered Markdown by default** — beautifully formatted output with heading hierarchy, code blocks, inline code, bold, italic, links, and blockquotes
+- **Selectable rendered text** — highlight and copy any portion of the rendered document, including selections that span headings, paragraphs, lists, quotes, and code blocks
+- **Reader-friendly code blocks** — code is presented with a distinct background, monospace typography, language labels, and a dedicated copy action
 - **Source view** — toggle to see raw Markdown at any time
 - **Multi-file sidebar** — open multiple files and switch between them; hide the sidebar for a distraction-free reading experience
 - **Drag and drop opening** — drop `.md`, `.markdown`, or `.txt` files onto the window to open them instantly
@@ -91,15 +93,19 @@ sudo pacman -S gtk3
 
 Launch Readfence and use the **Open** button (or `Ctrl+O`) to open one or more Markdown files. You can also drag `.md`, `.markdown`, or `.txt` files onto the window to open them directly.
 
+In rendered view, drag across the document to select exactly the text you need. Selections can cross Markdown block boundaries, and links remain clickable when they are not being selected. Use the **Copy text** action to copy the entire rendered document at once.
+
 ### Keyboard shortcuts
 
-| Shortcut      | Action                    |
-|---------------|---------------------------|
-| `Ctrl+O`      | Open file(s)              |
-| `Ctrl+B`      | Toggle sidebar            |
-| `F11`         | Toggle maximize / restore |
-| `Ctrl+=`      | Increase font size        |
-| `Ctrl+-`      | Decrease font size        |
+| Shortcut | Action |
+|---|---|
+| `Ctrl+O` | Open file(s) |
+| `Ctrl+B` | Toggle sidebar |
+| `Ctrl+C` | Copy the current rendered-text selection |
+| `Ctrl+A` | Select the entire rendered document |
+| `F11` | Toggle fullscreen |
+| `Ctrl+=` | Increase font size |
+| `Ctrl+-` | Decrease font size |
 
 ### Themes
 
@@ -123,12 +129,14 @@ Built with the [Elm architecture](https://guide.elm-lang.org/architecture/) patt
 
 ### Dependencies
 
-| Crate   | Purpose                          |
-|---------|----------------------------------|
-| `iced`  | Cross-platform GUI framework     |
-| `rfd`   | Native async file dialogs        |
-| `open`  | Open URLs in the system browser  |
-| `tokio` | Async file I/O                   |
+| Crate | Purpose |
+|---|---|
+| `iced` | Cross-platform GUI framework |
+| `pulldown-cmark` | Markdown parsing |
+| `rfd` | Native async file dialogs |
+| `open` | Open URLs in the system browser |
+| `tokio` | Async file I/O and file watching |
+| `image` | Application icon decoding |
 
 ## Roadmap
 
@@ -138,6 +146,8 @@ Built with the [Elm architecture](https://guide.elm-lang.org/architecture/) patt
 |---|---|
 | ✅ **Auto-reload on file change** | Watches open files and reloads instantly when saved — live preview alongside your editor |
 | ✅ **Drag and drop to open** | Drop Markdown or text files onto the window to open them without using the file dialog |
+| ✅ **Selectable rendered documents** | Select and copy text across rendered block boundaries while retaining clickable links |
+| ✅ **Reader metadata** | Displays word count, line count, and estimated reading time for the open document |
 
 ### Up next
 
@@ -161,7 +171,6 @@ Built with the [Elm architecture](https://guide.elm-lang.org/architecture/) patt
 |---|---|
 | **Open folder** | Open an entire directory and browse all Markdown files from the sidebar |
 | **YAML front matter support** | Detect and display front matter (Hugo, Jekyll, Obsidian) cleanly instead of as raw text |
-| **Word count & reading time** | Status bar showing word count and estimated reading time for the open document |
 
 Have a feature request? [Open an issue](https://github.com/adamwhiles/readfence/issues) to discuss it.
 
