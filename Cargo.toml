@@ -1,12 +1,12 @@
 [package]
 name = "readfence"
-version = "0.3.3"
+version = "0.3.4"
 edition = "2024"
 description = "A clean, modern Markdown viewer for developers"
 authors = ["SignalPeak Media LLC"]
 license = "MIT"
 repository = "https://github.com/adamwhiles/readfence"
-homepage = "https://github.com/adamahiles/readfence"
+homepage = "https://readfence.com"
 keywords = ["markdown", "viewer", "developer-tools", "iced"]
 categories = ["text-editors"]
 readme = "README.md"

@@ -16,7 +16,14 @@
       let mut builder = iced::application(App::new, App::update, App::view)
           .title(App::title)
           .theme(App::theme)
-          .subscription(App::subscription);
+          .subscription(App::subscription)
+          .settings(iced::Settings {
+              // Match the `.desktop` file basename so the window associates
+              // with the installed desktop entry (correct icon/name under
+              // Wayland app_id and X11 WM_CLASS, e.g. inside a Flatpak).
+              id: Some("com.readfence.Readfence".into()),
+              ..iced::Settings::default()
+          });
 
       if let Some(icon) = load_icon() {
           builder = builder.window(window::Settings {

@@ -1,4 +1,4 @@
-use crate::files::file_watcher;
+use crate::files::{file_watcher, load_paths};
 use crate::markdown_text::RenderedBlock;
 use crate::messages::Message;
 use iced::{
@@ -54,13 +54,22 @@ impl Default for App {
 
 impl App {
     pub fn new() -> (Self, Task<Message>) {
-        (
-            Self {
-                theme: Theme::Nightfly,
-                ..Self::default()
-            },
-            Task::none(),
-        )
+        let app = Self {
+            theme: Theme::Nightfly,
+            ..Self::default()
+        };
+
+        // Open any files passed on the command line, e.g. from a file
+        // manager's "Open with" action or a `.desktop` MimeType association.
+        // Unsupported paths are filtered out by `load_paths`.
+        let paths: Vec<PathBuf> = std::env::args_os().skip(1).map(PathBuf::from).collect();
+        let task = if paths.is_empty() {
+            Task::none()
+        } else {
+            Task::perform(load_paths(paths), Message::FilesLoaded)
+        };
+
+        (app, task)
     }
 
     pub fn title(&self) -> String {

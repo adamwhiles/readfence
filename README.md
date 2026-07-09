@@ -76,18 +76,14 @@ The binary will be at `target/release/readfence` (or `readfence.exe` on Windows)
 
 ### Linux build dependencies
 
-On Linux, `rfd` (the file dialog library) requires GTK 3 development headers:
+No GTK or other GUI development headers are required. Readfence's file dialog
+(`rfd`) uses the [XDG Desktop Portal](https://flatpak.github.io/xdg-desktop-portal/),
+and rendering is handled by `iced`/`wgpu`. Just a Rust toolchain and a C
+compiler (for a few transitive crates) are needed.
 
-```sh
-# Debian / Ubuntu
-sudo apt install libgtk-3-dev
-
-# Fedora
-sudo dnf install gtk3-devel
-
-# Arch Linux
-sudo pacman -S gtk3
-```
+At runtime the **Open** dialog relies on a desktop portal backend, which every
+mainstream desktop environment ships by default (e.g. `xdg-desktop-portal-gtk`,
+`-kde`, or `-hyprland`).
 
 ## Usage
 

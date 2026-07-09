@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Readfence
+GenericName=Markdown Viewer
+Comment=A clean, modern Markdown viewer for developers
+Exec=readfence %F
+Icon=com.readfence.Readfence
+Terminal=false
+Categories=Utility;TextEditor;
+MimeType=text/markdown;text/x-markdown;
+Keywords=Markdown;md;viewer;reader;preview;
+StartupNotify=true
+StartupWMClass=com.readfence.Readfence

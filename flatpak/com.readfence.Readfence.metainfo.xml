@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.readfence.Readfence</id>
+
+  <name>Readfence</name>
+  <summary>Clean, modern Markdown viewer</summary>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <developer id="com.readfence">
+    <name>SignalPeak Media LLC</name>
+  </developer>
+
+  <description>
+    <p>
+      Readfence is a clean, modern Markdown viewer built for developers and
+      Linux users. It renders Markdown beautifully by default, with heading
+      hierarchy, code blocks, inline code, bold, italic, links, and blockquotes.
+    </p>
+    <p>Features include:</p>
+    <ul>
+      <li>Rendered Markdown by default, with a toggleable raw source view</li>
+      <li>Selectable rendered text you can highlight and copy across headings, paragraphs, lists, quotes, and code blocks</li>
+      <li>Reader-friendly code blocks with language labels and a one-click copy action</li>
+      <li>A multi-file sidebar for opening and switching between documents</li>
+      <li>Drag and drop to open Markdown or text files instantly</li>
+      <li>Automatic reload when an open file changes on disk</li>
+      <li>Fullscreen reading mode and adjustable font size</li>
+      <li>A rich theme library including Dark, Light, Dracula, Nord, Gruvbox, Solarized, Tokyo Night, and Catppuccin</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">com.readfence.Readfence.desktop</launchable>
+
+  <screenshots>
+    <screenshot type="default">
+      <image>https://readfence.com/screenshot.png</image>
+      <caption>A Markdown document rendered in Readfence</caption>
+    </screenshot>
+  </screenshots>
+
+  <url type="homepage">https://readfence.com</url>
+  <url type="bugtracker">https://github.com/adamwhiles/readfence/issues</url>
+  <url type="vcs-browser">https://github.com/adamwhiles/readfence</url>
+
+  <categories>
+    <category>Utility</category>
+    <category>TextEditor</category>
+  </categories>
+
+  <keywords>
+    <keyword>Markdown</keyword>
+    <keyword>md</keyword>
+    <keyword>viewer</keyword>
+    <keyword>reader</keyword>
+    <keyword>preview</keyword>
+  </keywords>
+
+  <recommends>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </recommends>
+
+  <content_rating type="oars-1.1" />
+
+  <releases>
+    <!-- Set the date below to the actual date you tag/publish 0.3.4. -->
+    <release version="0.3.4" date="2026-07-09">
+      <description>
+        <p>Desktop integration and packaging improvements.</p>
+        <ul>
+          <li>Open files passed on the command line or via a file-manager "Open with" action</li>
+          <li>Register a desktop entry and icon, and associate Markdown files with Readfence</li>
+          <li>Initial Flatpak packaging</li>
+        </ul>
+      </description>
+    </release>
+    <release version="0.3.3" date="2026-07-08">
+      <description>
+        <p>Rendering improvements.</p>
+        <ul>
+          <li>Reworked the Markdown rendering pipeline</li>
+          <li>Improved the visual presentation of rendered documents</li>
+        </ul>
+      </description>
+    </release>
+  </releases>
+</component>
