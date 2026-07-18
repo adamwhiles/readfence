@@ -29,6 +29,12 @@ pub enum Message {
     CopyRenderedText(String),
     FileChanged(usize, SystemTime),
     FileReloaded(usize, String, SystemTime),
+    WindowResized(f32),
+    RemoteImageLoaded(String, Option<Vec<u8>>),
+    UpdateCheckTick,
+    UpdateCheckCompleted(Option<crate::updates::UpdateInfo>),
+    OpenUpdatePage,
+    DismissUpdate,
     NoOp,
     WatchTick,
 }

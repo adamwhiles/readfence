@@ -1,48 +1,96 @@
-use crate::app::{App, OpenFile, ViewMode};
-use crate::markdown_text::{LinkHighlighter, RenderedBlock, RenderedBlockKind};
+use crate::app::{App, OpenFile, RemoteImage, ViewMode, svg_dimensions};
+use crate::markdown_text::{
+    ImageSource, RenderedBlock, RenderedBlockKind, SpanHighlighter, SpanStyle,
+};
 use crate::messages::Message;
 use crate::selection_group::{SelectionRegion, selection_group};
 use crate::styles::{
     style_app_background, style_badge, style_btn_ghost, style_btn_ghost_dim, style_btn_primary,
     style_btn_seg, style_btn_seg_active, style_file_active, style_file_inactive, style_panel,
-    style_selectable_code, style_selectable_prose, style_sidebar, style_status_bar,
-    style_subtle_panel, style_toolbar,
+    style_picker, style_scrollable, style_selectable_code, style_selectable_prose, style_sidebar,
+    style_status_bar, style_subtle_panel, style_toolbar, style_update_banner, surface_color,
 };
 use iced::{
     Border, Center, Color, Element, Fill, Font, Theme,
     advanced::text::highlighter,
     keyboard::Key,
     widget::{
-        Space, button, column, container, pick_list, row, rule, scrollable, text, text_editor,
+        Space, button, column, container, image, pick_list, row, rule, scrollable, svg, text,
+        text_editor,
     },
 };
 use std::path::Path;
 
 impl App {
     pub fn view(&self) -> Element<'_, Message> {
-        container(
-            column![
-                self.view_toolbar(),
-                if self.files.is_empty() {
-                    self.view_welcome()
-                } else {
-                    self.view_body()
-                }
-            ]
-            .height(Fill),
-        )
-        .width(Fill)
-        .height(Fill)
-        .style(style_app_background)
+        let mut layout = column![self.view_toolbar()];
+        if let Some(notice) = &self.update_notice {
+            layout = layout.push(self.view_update_banner(notice));
+        }
+        layout = layout.push(if self.files.is_empty() {
+            self.view_welcome()
+        } else {
+            self.view_body()
+        });
+
+        container(layout.height(Fill))
+            .width(Fill)
+            .height(Fill)
+            .style(style_app_background)
+            .into()
+    }
+
+    fn view_update_banner<'a>(
+        &self,
+        notice: &'a crate::updates::UpdateInfo,
+    ) -> Element<'a, Message> {
+        let message = text(format!("Readfence {} is available", notice.version)).size(13);
+
+        let download = button(text("Download").size(12).wrapping(text::Wrapping::None))
+            .on_press(Message::OpenUpdatePage)
+            .style(style_btn_primary)
+            .padding([5, 14]);
+
+        let dismiss = button(text("✕").size(11))
+            .on_press(Message::DismissUpdate)
+            .style(style_btn_ghost_dim)
+            .padding([5, 9]);
+
+        column![
+            container(
+                row![message, Space::new().width(Fill), download, dismiss]
+                    .spacing(10)
+                    .align_y(Center),
+            )
+            .width(Fill)
+            .padding([7, 18])
+            .style(style_update_banner),
+            rule::horizontal(1),
+        ]
         .into()
     }
 
     fn view_toolbar(&self) -> Element<'_, Message> {
+        // Breakpoints: the document meta needs the most room, then the long
+        // button labels; below that the controls move to a second row.
+        let width = self.window_width;
+        let show_meta = width >= 1280.0;
+        let full_labels = width >= 1040.0;
+        let two_rows = width < 900.0;
+
+        let title_chars = if full_labels {
+            40
+        } else if two_rows {
+            24
+        } else {
+            20
+        };
         let active_title = self
             .files
             .get(self.active)
             .map(|file| file_name(&file.path))
             .unwrap_or_else(|| "No document open".to_string());
+        let active_title = truncate_label(&active_title, title_chars);
 
         let active_meta = self
             .files
@@ -51,7 +99,7 @@ impl App {
                 format!(
                     "{} words · {}",
                     word_count(&file.content),
-                    parent_label(&file.path)
+                    truncate_path_tail(&parent_label(&file.path), 36)
                 )
             })
             .unwrap_or_else(|| "Open a Markdown file to start reading".to_string());
@@ -87,10 +135,10 @@ impl App {
             .style(style_btn_primary)
             .padding([8, 18]);
 
-        let sidebar_label = if self.sidebar_visible {
-            "Hide files"
-        } else {
-            "Show files"
+        let sidebar_label = match (self.sidebar_visible, full_labels) {
+            (true, true) => "Hide files",
+            (false, true) => "Show files",
+            (_, false) => "Files",
         };
         let sidebar_btn = button(text(sidebar_label).size(13))
             .on_press(Message::ToggleSidebar)
@@ -139,47 +187,82 @@ impl App {
         .spacing(3)
         .align_y(Center);
 
-        let theme_picker = pick_list(Theme::ALL, Some(&self.theme), Message::ThemeChanged)
-            .text_size(13)
-            .padding([8, 10]);
-
-        let fs_label = if self.fullscreen {
-            "Exit full"
+        let theme_picker = pick_list(
+            App::available_themes(),
+            Some(self.theme.clone()),
+            Message::ThemeChanged,
+        )
+        .text_size(13)
+        .padding([8, 10])
+        .style(style_picker);
+        let theme_picker = if full_labels {
+            theme_picker
         } else {
-            "Fullscreen"
+            theme_picker.width(150)
+        };
+
+        let fs_label = match (self.fullscreen, full_labels) {
+            (true, true) => "Exit full",
+            (false, true) => "Fullscreen",
+            (true, false) => "Exit",
+            (false, false) => "Full",
         };
         let fs_btn = button(text(fs_label).size(13))
             .on_press(Message::ToggleFullscreen)
             .style(style_btn_ghost)
             .padding([8, 14]);
 
-        let toolbar_row = row![
-            brand,
-            container(
-                text(active_meta)
-                    .size(12)
-                    .style(|theme: &Theme| text::Style {
-                        color: Some(Color {
-                            a: 0.58,
-                            ..theme.extended_palette().background.base.text
-                        }),
-                    })
-            )
-            .padding([0, 10]),
-            Space::new().width(Fill),
-            open,
-            sidebar_btn,
-            seg,
-            font_row,
-            theme_picker,
-            fs_btn,
-        ]
-        .spacing(8)
-        .padding([12, 18])
-        .align_y(Center);
+        let toolbar: Element<'_, Message> = if two_rows {
+            column![
+                row![brand, Space::new().width(Fill), open, sidebar_btn]
+                    .spacing(8)
+                    .align_y(Center),
+                row![
+                    seg,
+                    font_row,
+                    Space::new().width(Fill),
+                    theme_picker,
+                    fs_btn
+                ]
+                .spacing(8)
+                .align_y(Center),
+            ]
+            .spacing(10)
+            .padding([10, 14])
+            .into()
+        } else {
+            let mut toolbar_row = row![brand];
+            if show_meta {
+                toolbar_row = toolbar_row.push(
+                    container(
+                        text(active_meta)
+                            .size(12)
+                            .style(|theme: &Theme| text::Style {
+                                color: Some(Color {
+                                    a: 0.58,
+                                    ..theme.extended_palette().background.base.text
+                                }),
+                            }),
+                    )
+                    .padding([0, 10]),
+                );
+            }
+            toolbar_row
+                .push(Space::new().width(Fill))
+                .push(open)
+                .push(sidebar_btn)
+                .push(seg)
+                .push(font_row)
+                .push(theme_picker)
+                .push(fs_btn)
+                .spacing(8)
+                .padding([12, 18])
+                .align_y(Center)
+                .into()
+        };
 
         column![
-            container(toolbar_row).width(Fill).style(style_toolbar),
+            container(toolbar).width(Fill).style(style_toolbar),
             rule::horizontal(1),
         ]
         .into()
@@ -247,7 +330,7 @@ impl App {
                     style_file_inactive
                 });
 
-                let close = button(text("x").size(12))
+                let close = button(text("✕").size(11))
                     .on_press(Message::CloseFile(i))
                     .padding([8, 9])
                     .style(style_btn_ghost_dim);
@@ -259,7 +342,9 @@ impl App {
         container(
             column![
                 container(header).padding([14, 14]),
-                scrollable(column(items).spacing(4).padding([8, 8])).height(Fill),
+                scrollable(column(items).spacing(4).padding([8, 8]))
+                    .style(style_scrollable)
+                    .height(Fill),
             ]
             .height(Fill),
         )
@@ -338,13 +423,21 @@ impl App {
         for (index, block) in file.rendered_blocks.iter().enumerate() {
             selection_regions.push(match block.kind {
                 RenderedBlockKind::Code { .. } => SelectionRegion::code(index),
-                RenderedBlockKind::Rule => SelectionRegion::rule(),
+                RenderedBlockKind::Table => SelectionRegion::table(index),
+                RenderedBlockKind::Rule | RenderedBlockKind::Image { .. } => {
+                    SelectionRegion::rule()
+                }
                 RenderedBlockKind::Quote => SelectionRegion::quote(index),
                 _ => SelectionRegion::block(index),
             });
             elements.push(self.view_rendered_block(index, block));
         }
-        let rendered_blocks = selection_group(elements, selection_regions);
+        let gaps = file
+            .rendered_blocks
+            .windows(2)
+            .map(|pair| block_gap(&pair[0].kind, &pair[1].kind))
+            .collect();
+        let rendered_blocks = selection_group(elements, selection_regions, gaps);
 
         let document_header = column![
             row![
@@ -353,7 +446,7 @@ impl App {
                         weight: iced::font::Weight::Bold,
                         ..Font::DEFAULT
                     }),
-                    text(parent_label(&file.path))
+                    text(truncate_path_tail(&parent_label(&file.path), 46))
                         .size(13)
                         .style(|theme: &Theme| text::Style {
                             color: Some(Color {
@@ -364,12 +457,13 @@ impl App {
                 ]
                 .spacing(4),
                 Space::new().width(Fill),
-                button(text("Copy text").size(11))
+                button(text("Copy text").size(11).wrapping(text::Wrapping::None))
                     .on_press(Message::CopyRenderedText(file.rendered_text.clone()))
                     .style(style_btn_ghost)
                     .padding([5, 10]),
                 badge("Markdown".to_string()),
             ]
+            .spacing(8)
             .align_y(Center),
             row![
                 badge(format!("{} words", word_count(&file.content))),
@@ -381,9 +475,12 @@ impl App {
         ]
         .spacing(14);
 
+        // Cap the measure so long lines stay comfortable to read on wide
+        // windows.
         let document =
             container(column![document_header, rule::horizontal(1), rendered_blocks,].spacing(26))
                 .width(Fill)
+                .max_width(900)
                 .padding([34, 44])
                 .style(style_panel);
 
@@ -393,6 +490,13 @@ impl App {
                 .center_x(Fill)
                 .padding([28, 34]),
         )
+        .direction(scrollable::Direction::Vertical(
+            scrollable::Scrollbar::new()
+                .width(8)
+                .margin(2)
+                .scroller_width(6),
+        ))
+        .style(style_scrollable)
         .width(Fill)
         .height(Fill)
         .into()
@@ -407,61 +511,114 @@ impl App {
             RenderedBlockKind::Code { language } => {
                 self.view_selectable_code_block(index, language.as_deref(), block)
             }
+            RenderedBlockKind::Table => self.view_selectable_table_block(index, block),
+            RenderedBlockKind::Image { source, alt } => self.view_image_block(source, alt),
             RenderedBlockKind::Rule => container(rule::horizontal(1))
                 .width(Fill)
                 .padding([8, 0])
                 .into(),
             kind => {
+                let base = self.font_size.max(15.0);
                 let size = match kind {
-                    RenderedBlockKind::Heading(1) => self.font_size.max(15.0) * 1.85,
-                    RenderedBlockKind::Heading(2) => self.font_size.max(15.0) * 1.55,
-                    RenderedBlockKind::Heading(3) => self.font_size.max(15.0) * 1.32,
-                    RenderedBlockKind::Heading(4) => self.font_size.max(15.0) * 1.16,
-                    RenderedBlockKind::Heading(_) => self.font_size.max(15.0),
-                    RenderedBlockKind::ListItem => self.font_size.max(15.0),
-                    RenderedBlockKind::Quote => self.font_size.max(15.0),
-                    RenderedBlockKind::Table => (self.font_size.max(15.0) * 0.92).max(13.0),
-                    RenderedBlockKind::Paragraph
-                    | RenderedBlockKind::Code { .. }
-                    | RenderedBlockKind::Rule => self.font_size.max(15.0),
+                    RenderedBlockKind::Heading(1) => base * 2.0,
+                    RenderedBlockKind::Heading(2) => base * 1.5,
+                    RenderedBlockKind::Heading(3) => base * 1.3,
+                    RenderedBlockKind::Heading(4) => base * 1.15,
+                    _ => base,
+                };
+                let font = match kind {
+                    RenderedBlockKind::Heading(_) => Font {
+                        weight: iced::font::Weight::Bold,
+                        ..Font::DEFAULT
+                    },
+                    _ => Font::DEFAULT,
+                };
+                let line_height = match kind {
+                    RenderedBlockKind::Heading(_) => 1.25,
+                    RenderedBlockKind::ListItem => 1.45,
+                    _ => 1.55,
                 };
 
                 let editor = text_editor(&block.content)
                     .on_action(move |action| Message::RenderedBlockAction(index, action))
                     .key_binding(rendered_key_binding)
+                    .font(font)
                     .size(size)
-                    .line_height(text::LineHeight::Relative(1.35))
+                    .line_height(text::LineHeight::Relative(line_height))
                     .wrapping(text::Wrapping::WordOrGlyph)
                     .padding([2, 0])
                     .style(style_selectable_prose)
-                    .highlight_with::<LinkHighlighter>(
-                        block.link_highlights(),
-                        link_highlight_format,
+                    .highlight_with::<SpanHighlighter>(
+                        block.span_highlights(),
+                        span_highlight_format,
                     );
 
                 match kind {
-                    RenderedBlockKind::Quote => container(editor)
-                        .width(Fill)
-                        .padding([2, 14])
-                        .style(|theme: &Theme| {
-                            let p = theme.extended_palette();
-                            container::Style {
-                                border: Border {
-                                    width: 0.0,
-                                    color: Color::TRANSPARENT,
-                                    radius: 0.0.into(),
-                                },
+                    // Section headings get a hairline underline, like a
+                    // well-set document's running heads.
+                    RenderedBlockKind::Heading(1) | RenderedBlockKind::Heading(2) => column![
+                        editor,
+                        container(Space::new().width(Fill).height(1))
+                            .style(|theme: &Theme| container::Style {
                                 background: Some(
                                     Color {
-                                        a: 0.08,
-                                        ..p.primary.base.color
+                                        a: 0.14,
+                                        ..theme.extended_palette().background.base.text
                                     }
                                     .into(),
                                 ),
                                 ..Default::default()
-                            }
-                        })
-                        .into(),
+                            })
+                    ]
+                    .spacing(8)
+                    .into(),
+                    // Quotes carry the accent as a left bar over a soft tint.
+                    // An opaque inner panel over an accent outer one exposes a
+                    // 3px strip as the bar; a Fill-height bar widget would
+                    // blow up inside the scrollable's unbounded layout.
+                    RenderedBlockKind::Quote => container(
+                        container(editor)
+                            .width(Fill)
+                            .padding([8, 14])
+                            .style(|theme: &Theme| {
+                                let p = theme.extended_palette();
+                                container::Style {
+                                    background: Some(
+                                        mix(surface_color(theme), p.primary.base.color, 0.08)
+                                            .into(),
+                                    ),
+                                    border: Border {
+                                        radius: iced::border::Radius {
+                                            top_left: 0.0,
+                                            top_right: 6.0,
+                                            bottom_right: 6.0,
+                                            bottom_left: 0.0,
+                                        },
+                                        ..Default::default()
+                                    },
+                                    ..Default::default()
+                                }
+                            }),
+                    )
+                    .width(Fill)
+                    .padding(iced::Padding {
+                        left: 3.0,
+                        ..iced::Padding::ZERO
+                    })
+                    .style(|theme: &Theme| container::Style {
+                        background: Some(theme.extended_palette().primary.base.color.into()),
+                        border: Border {
+                            radius: iced::border::Radius {
+                                top_left: 3.0,
+                                top_right: 6.0,
+                                bottom_right: 6.0,
+                                bottom_left: 3.0,
+                            },
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    })
+                    .into(),
                     _ => editor.into(),
                 }
             }
@@ -525,12 +682,76 @@ impl App {
             .key_binding(rendered_key_binding)
             .font(Font::MONOSPACE)
             .size((self.font_size.max(15.0) * 0.86).max(13.0))
-            .line_height(text::LineHeight::Relative(1.35))
+            .line_height(text::LineHeight::Relative(1.45))
             .wrapping(text::Wrapping::None)
             .padding([14, 16])
             .style(style_selectable_code);
 
         container(column![header, code_view])
+            .width(Fill)
+            .style(style_subtle_panel)
+            .into()
+    }
+
+    fn view_image_block<'a>(&'a self, source: &'a ImageSource, alt: &'a str) -> Element<'a, Message> {
+        // The document column tops out at 900 with 44px side padding.
+        let max_width = (self.window_width - 200.0).clamp(320.0, 812.0);
+
+        match source {
+            ImageSource::Local(path) => {
+                if path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("svg")) {
+                    match std::fs::read(path) {
+                        Ok(bytes) => {
+                            let size = svg_dimensions(&bytes);
+                            sized_svg(svg::Handle::from_memory(bytes), size, max_width)
+                        }
+                        Err(_) => image_placeholder(alt, false),
+                    }
+                } else if path.exists() {
+                    container(
+                        image(image::Handle::from_path(path))
+                            .content_fit(iced::ContentFit::ScaleDown),
+                    )
+                    .width(Fill)
+                    .into()
+                } else {
+                    image_placeholder(alt, false)
+                }
+            }
+            ImageSource::Remote(url) => match self.remote_images.get(url) {
+                Some(RemoteImage::Raster(handle)) => container(
+                    image(handle.clone()).content_fit(iced::ContentFit::ScaleDown),
+                )
+                .width(Fill)
+                .into(),
+                Some(RemoteImage::Vector {
+                    handle,
+                    width,
+                    height,
+                }) => sized_svg(handle.clone(), Some((*width, *height)), max_width),
+                Some(RemoteImage::Loading) => image_placeholder(alt, true),
+                Some(RemoteImage::Failed) | None => image_placeholder(alt, false),
+            },
+        }
+    }
+
+    fn view_selectable_table_block<'a>(
+        &self,
+        index: usize,
+        block: &'a RenderedBlock,
+    ) -> Element<'a, Message> {
+        let editor = text_editor(&block.content)
+            .on_action(move |action| Message::RenderedBlockAction(index, action))
+            .key_binding(rendered_key_binding)
+            .font(Font::MONOSPACE)
+            .size((self.font_size.max(15.0) * 0.86).max(13.0))
+            .line_height(text::LineHeight::Relative(1.5))
+            .wrapping(text::Wrapping::None)
+            .padding([12, 14])
+            .style(style_selectable_prose)
+            .highlight_with::<SpanHighlighter>(block.span_highlights(), span_highlight_format);
+
+        container(editor)
             .width(Fill)
             .style(style_subtle_panel)
             .into()
@@ -663,6 +884,82 @@ fn badge<'a>(label: String) -> Element<'a, Message> {
         .into()
 }
 
+/// Renders an SVG at its natural size, scaled down when it exceeds the
+/// available measure. Without an intrinsic size the alt placeholder shows
+/// instead, since an unsized SVG would stretch to fill the column.
+fn sized_svg<'a>(
+    handle: svg::Handle,
+    size: Option<(f32, f32)>,
+    max_width: f32,
+) -> Element<'a, Message> {
+    match size {
+        Some((width, height)) if width > 0.0 && height > 0.0 => {
+            let scale = (max_width / width).min(1.0);
+            container(svg(handle).width(width * scale).height(height * scale))
+                .width(Fill)
+                .into()
+        }
+        _ => image_placeholder("SVG image", false),
+    }
+}
+
+fn image_placeholder<'a>(alt: &str, loading: bool) -> Element<'a, Message> {
+    let label = if loading {
+        "Loading image…".to_string()
+    } else if alt.is_empty() {
+        "[image]".to_string()
+    } else {
+        format!("[{alt}]")
+    };
+    text(label)
+        .size(14)
+        .font(Font {
+            style: iced::font::Style::Italic,
+            ..Font::DEFAULT
+        })
+        .style(|theme: &Theme| text::Style {
+            color: Some(Color {
+                a: 0.5,
+                ..theme.extended_palette().background.base.text
+            }),
+        })
+        .into()
+}
+
+// Opaque blend of two colors, for tinted surfaces that must cover what is
+// painted beneath them.
+fn mix(base: Color, tint: Color, amount: f32) -> Color {
+    Color {
+        r: base.r + (tint.r - base.r) * amount,
+        g: base.g + (tint.g - base.g) * amount,
+        b: base.b + (tint.b - base.b) * amount,
+        a: 1.0,
+    }
+}
+
+// Keeps the end of a path, which carries the informative components.
+fn truncate_path_tail(value: &str, max_chars: usize) -> String {
+    let count = value.chars().count();
+    if count <= max_chars {
+        value.to_string()
+    } else {
+        let tail: String = value
+            .chars()
+            .skip(count - max_chars.saturating_sub(1))
+            .collect();
+        format!("…{tail}")
+    }
+}
+
+fn truncate_label(value: &str, max_chars: usize) -> String {
+    if value.chars().count() <= max_chars {
+        value.to_string()
+    } else {
+        let prefix: String = value.chars().take(max_chars.saturating_sub(1)).collect();
+        format!("{}…", prefix.trim_end())
+    }
+}
+
 fn file_name(path: &Path) -> String {
     path.file_name()
         .and_then(|name| name.to_str())
@@ -705,12 +1002,62 @@ fn rendered_key_binding(key_press: text_editor::KeyPress) -> Option<text_editor:
     text_editor::Binding::from_key_press(key_press)
 }
 
-fn link_highlight_format(_highlight: &(), theme: &Theme) -> highlighter::Format<Font> {
-    highlighter::Format {
-        color: Some(theme.extended_palette().primary.strong.color),
-        font: Some(Font {
-            weight: iced::font::Weight::Semibold,
-            ..Font::DEFAULT
-        }),
+// Vertical rhythm: headings hug the section they introduce, list items and
+// quote lines read as one unit, panels and rules get room to breathe.
+fn block_gap(previous: &RenderedBlockKind, next: &RenderedBlockKind) -> f32 {
+    use RenderedBlockKind::{Code, Heading, Image, ListItem, Quote, Rule, Table};
+    match (previous, next) {
+        (ListItem, ListItem) => 7.0,
+        (Quote, Quote) => 6.0,
+        (Image { .. }, Image { .. }) => 8.0,
+        (Heading(_), Heading(_)) => 18.0,
+        (Heading(_), _) => 14.0,
+        (_, Heading(1) | Heading(2)) => 34.0,
+        (_, Heading(_)) => 28.0,
+        (Code { .. } | Table, _) | (_, Code { .. } | Table) => 20.0,
+        (Rule, _) | (_, Rule) => 22.0,
+        _ => 18.0,
     }
+}
+
+fn span_highlight_format(style: &SpanStyle, theme: &Theme) -> highlighter::Format<Font> {
+    let palette = theme.extended_palette();
+
+    // One accent, spent on structure: links and markers take the theme
+    // accent, frame glyphs and struck text recede, content stays in ink.
+    let color = if style.link {
+        Some(palette.primary.strong.color)
+    } else if style.marker {
+        Some(palette.primary.base.color)
+    } else if style.strike || style.dim {
+        Some(Color {
+            a: 0.5,
+            ..palette.background.base.text
+        })
+    } else {
+        None
+    };
+
+    // A `Some` font replaces the editor's base font entirely, so only emit
+    // one when the span actually changes family, weight, or slant.
+    let font = (style.strong || style.emphasis || style.code).then_some(Font {
+        family: if style.code {
+            iced::font::Family::Monospace
+        } else {
+            Font::DEFAULT.family
+        },
+        weight: if style.strong {
+            iced::font::Weight::Bold
+        } else {
+            iced::font::Weight::Normal
+        },
+        style: if style.emphasis {
+            iced::font::Style::Italic
+        } else {
+            iced::font::Style::Normal
+        },
+        ..Font::DEFAULT
+    });
+
+    highlighter::Format { color, font }
 }

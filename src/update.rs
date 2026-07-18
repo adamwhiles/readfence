@@ -1,9 +1,10 @@
-use crate::app::{App, OpenFile, ViewMode};
+use crate::app::{App, OpenFile, RemoteImage, ViewMode, looks_like_svg, svg_dimensions};
 use crate::files::{load_files, load_paths};
-use crate::markdown_text::{rendered_blocks, selectable_text};
+use crate::markdown_text::{ImageSource, RenderedBlockKind, rendered_blocks, selectable_text};
 use crate::messages::Message;
-use iced::widget::text_editor;
+use iced::widget::{image, svg, text_editor};
 use iced::{Point, Task, clipboard, window};
+use std::path::Path;
 
 impl App {
     pub fn update(&mut self, message: Message) -> Task<Message> {
@@ -21,8 +22,9 @@ impl App {
                         continue;
                     }
                     let editor_content = text_editor::Content::with_text(&content);
-                    let rendered_text = selectable_text(&content);
-                    let rendered_blocks = rendered_blocks(&content);
+                    let base_dir = path.parent().unwrap_or(Path::new("")).to_path_buf();
+                    let rendered_blocks = rendered_blocks(&content, &base_dir);
+                    let rendered_text = selectable_text(&rendered_blocks);
                     self.files.push(OpenFile {
                         path,
                         content,
@@ -35,7 +37,7 @@ impl App {
                 if self.files.len() > before {
                     self.active = self.files.len() - 1;
                 }
-                Task::none()
+                self.fetch_remote_images()
             }
 
             Message::SelectFile(i) => {
@@ -75,6 +77,7 @@ impl App {
             }
 
             Message::ThemeChanged(theme) => {
+                App::save_theme(&theme);
                 self.theme = theme;
                 Task::none()
             }
@@ -236,16 +239,119 @@ impl App {
 
             Message::FileReloaded(i, content, mtime) => {
                 if let Some(file) = self.files.get_mut(i) {
+                    let base_dir = file.path.parent().unwrap_or(Path::new("")).to_path_buf();
                     file.editor_content = text_editor::Content::with_text(&content);
-                    file.rendered_text = selectable_text(&content);
-                    file.rendered_blocks = rendered_blocks(&content);
+                    file.rendered_blocks = rendered_blocks(&content, &base_dir);
+                    file.rendered_text = selectable_text(&file.rendered_blocks);
                     file.last_modified = Some(mtime);
                     file.content = content;
                 }
+                self.fetch_remote_images()
+            }
+
+            Message::RemoteImageLoaded(url, bytes) => {
+                let loaded = match bytes {
+                    Some(bytes) if looks_like_svg(&bytes) => {
+                        match svg_dimensions(&bytes) {
+                            Some((width, height)) => RemoteImage::Vector {
+                                handle: svg::Handle::from_memory(bytes),
+                                width,
+                                height,
+                            },
+                            None => RemoteImage::Failed,
+                        }
+                    }
+                    Some(bytes) => RemoteImage::Raster(image::Handle::from_bytes(bytes)),
+                    None => RemoteImage::Failed,
+                };
+                self.remote_images.insert(url, loaded);
+                Task::none()
+            }
+
+            Message::WindowResized(width) => {
+                self.window_width = width;
+                Task::none()
+            }
+
+            Message::UpdateCheckTick => Task::perform(
+                crate::updates::check_for_update(),
+                Message::UpdateCheckCompleted,
+            ),
+
+            Message::UpdateCheckCompleted(info) => {
+                // A failed re-check keeps any notice already showing, and a
+                // dismissed release stays dismissed.
+                if let Some(info) = info
+                    && self.dismissed_update.as_deref() != Some(info.version.as_str())
+                {
+                    self.update_notice = Some(info);
+                }
+                Task::none()
+            }
+
+            Message::OpenUpdatePage => {
+                if let Some(notice) = &self.update_notice {
+                    let _ = open::that_detached(&notice.url);
+                }
+                Task::none()
+            }
+
+            Message::DismissUpdate => {
+                self.dismissed_update = self.update_notice.take().map(|notice| notice.version);
                 Task::none()
             }
 
             Message::NoOp => Task::none(),
         }
     }
+
+    /// Starts a download for every remote image referenced by an open file
+    /// that has not been requested yet.
+    fn fetch_remote_images(&mut self) -> Task<Message> {
+        let urls: Vec<String> = self
+            .files
+            .iter()
+            .flat_map(|file| file.rendered_blocks.iter())
+            .filter_map(|block| match &block.kind {
+                RenderedBlockKind::Image {
+                    source: ImageSource::Remote(url),
+                    ..
+                } => Some(url.clone()),
+                _ => None,
+            })
+            .collect();
+
+        let mut tasks = Vec::new();
+        for url in urls {
+            if self.remote_images.contains_key(&url) {
+                continue;
+            }
+            self.remote_images.insert(url.clone(), RemoteImage::Loading);
+            let fetch_url = url.clone();
+            tasks.push(Task::perform(
+                async move {
+                    tokio::task::spawn_blocking(move || fetch_image_bytes(&fetch_url))
+                        .await
+                        .ok()
+                        .flatten()
+                },
+                move |bytes| Message::RemoteImageLoaded(url.clone(), bytes),
+            ));
+        }
+        Task::batch(tasks)
+    }
+}
+
+fn fetch_image_bytes(url: &str) -> Option<Vec<u8>> {
+    let response = ureq::get(url)
+        .timeout(std::time::Duration::from_secs(20))
+        .call()
+        .ok()?;
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(
+        &mut std::io::Read::take(response.into_reader(), 32 * 1024 * 1024),
+        &mut bytes,
+    )
+    .ok()?;
+    Some(bytes)
 }

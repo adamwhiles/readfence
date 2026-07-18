@@ -7,6 +7,7 @@
   mod selection_group;
   mod styles;
   mod update;
+  mod updates;
   mod view;
 
   use app::App;
@@ -25,15 +26,12 @@
               ..iced::Settings::default()
           });
 
-      if let Some(icon) = load_icon() {
-          builder = builder.window(window::Settings {
-              icon: Some(icon),
-              position: window::Position::Centered,
-              ..Default::default()
-          });
-      } else {
-          builder = builder.centered();
-      }
+      builder = builder.window(window::Settings {
+          icon: load_icon(),
+          position: window::Position::Centered,
+          min_size: Some(iced::Size::new(520.0, 400.0)),
+          ..Default::default()
+      });
 
       builder.run()
   }

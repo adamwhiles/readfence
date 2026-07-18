@@ -7,11 +7,12 @@
 
 A clean, modern Markdown viewer built for developers and Linux users. Written in Rust using the [iced](https://iced.rs) GUI library.
 
-![Readfence screenshot](https://readfence.com/screenshot.png?v=0.3.3)
+![Readfence screenshot](https://readfence.com/screenshot.png?v=0.4.0)
 
 ## Features
 
-- **Rendered Markdown by default** — beautifully formatted output with heading hierarchy, code blocks, inline code, bold, italic, links, and blockquotes
+- **Rendered Markdown by default** — beautifully formatted output with heading hierarchy, aligned tables, lists, task lists, GitHub-style alerts, code blocks, inline styling, links, and blockquotes
+- **Image rendering** — local and remote images render in place, including SVG badges at their natural size; broken references degrade to a quiet placeholder
 - **Selectable rendered text** — highlight and copy any portion of the rendered document, including selections that span headings, paragraphs, lists, quotes, and code blocks
 - **Reader-friendly code blocks** — code is presented with a distinct background, monospace typography, language labels, and a dedicated copy action
 - **Source view** — toggle to see raw Markdown at any time
@@ -19,7 +20,8 @@ A clean, modern Markdown viewer built for developers and Linux users. Written in
 - **Drag and drop opening** — drop `.md`, `.markdown`, or `.txt` files onto the window to open them instantly
 - **Fullscreen / maximized mode** — one click or `F11` for focused reading
 - **Adjustable font size** — increase or decrease with `Ctrl+=` / `Ctrl+-`
-- **Rich theme library** — powered by iced's built-in theme system: Dark, Light, Dracula, Nord, Gruvbox, Solarized, Tokyo Night, Catppuccin, Oxocarbon, and more
+- **Curated theme library** — fifteen themes that all render beautifully, from Nightfly and Dracula to Catppuccin and Kanagawa, with polished light-mode support
+- **Update notifications** — a quiet banner appears when a newer release is out, with a one-click jump to the download page
 - **Cross-platform** — Windows, Linux, and macOS
 - **Clickable links** — opens URLs in your default system browser
 - **Keyboard shortcuts** — full keyboard control for power users
@@ -105,16 +107,20 @@ In rendered view, drag across the document to select exactly the text you need. 
 
 ### Themes
 
-Select a theme from the dropdown in the toolbar. Available themes include:
+Select a theme from the dropdown in the toolbar — your choice is remembered across launches. The list is curated so every theme renders beautifully:
 
+- **Moonfly** — pitch-dark and focused (the default)
 - **Dark** / **Light** — iced defaults
+- **Nightfly** — Moonfly's deep navy sibling
 - **Dracula** — the popular dark theme
 - **Nord** — arctic, north-bluish colour palette
+- **Tokyo Night** / **Tokyo Night Storm** — clean dark themes inspired by Tokyo at night
+- **Catppuccin Mocha** / **Catppuccin Latte** — soothing pastels, dark and light
 - **Gruvbox Dark** — retro groove dark theme
 - **Solarized Dark** — precision colours for machines and people
-- **Tokyo Night** — a clean dark theme inspired by Tokyo at night
-- **Catppuccin Mocha** — soothing pastel dark theme
+- **Kanagawa Wave** — muted ink tones after Hokusai
 - **Oxocarbon** — IBM carbon design inspired
+- **Ferra** — warm rosewood and earth tones
 
 Built with the [Elm architecture](https://guide.elm-lang.org/architecture/) pattern as implemented by iced:
 
@@ -127,12 +133,15 @@ Built with the [Elm architecture](https://guide.elm-lang.org/architecture/) patt
 
 | Crate | Purpose |
 |---|---|
-| `iced` | Cross-platform GUI framework |
+| `iced` | Cross-platform GUI framework, image and SVG rendering |
 | `pulldown-cmark` | Markdown parsing |
 | `rfd` | Native async file dialogs |
 | `open` | Open URLs in the system browser |
 | `tokio` | Async file I/O and file watching |
 | `image` | Application icon decoding |
+| `unicode-width` | Table column alignment |
+| `ureq` | Remote image downloads and update checks |
+| `dirs` | Platform config directory for saved preferences |
 
 ## Roadmap
 
@@ -140,6 +149,10 @@ Built with the [Elm architecture](https://guide.elm-lang.org/architecture/) patt
 
 | Feature | Description |
 |---|---|
+| ✅ **Rendering overhaul** | Aligned tables, real bullets, inline bold/italic/code, task lists, alerts, and a tuned reading rhythm |
+| ✅ **Image rendering** | Local and remote images render in place, including SVG badges at natural size |
+| ✅ **Curated themes + memory** | Fifteen polished themes with proper light-mode support; your choice persists across launches |
+| ✅ **Update notifications** | A quiet banner when a newer release ships, checked at launch and every six hours |
 | ✅ **Auto-reload on file change** | Watches open files and reloads instantly when saved — live preview alongside your editor |
 | ✅ **Drag and drop to open** | Drop Markdown or text files onto the window to open them without using the file dialog |
 | ✅ **Selectable rendered documents** | Select and copy text across rendered block boundaries while retaining clickable links |
@@ -158,8 +171,8 @@ Built with the [Elm architecture](https://guide.elm-lang.org/architecture/) patt
 |---|---|
 | **Table of contents panel** | Auto-generated heading outline in the sidebar with jump-to-section navigation |
 | **Find in document** | Ctrl+F search bar that highlights matches in rendered or source view |
-| **Local image rendering** | Render images referenced by relative path so `![](./img.png)` works as expected |
-| **Persistent settings** | Remember window size, theme, font size, and last open files across restarts |
+| **Persistent settings** | Remember window size, font size, and last open files across restarts |
+| **Automatic updates** | Download and install new releases from the update banner |
 
 ### On the radar
 

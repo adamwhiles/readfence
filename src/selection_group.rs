@@ -4,7 +4,9 @@ use iced::advanced::overlay;
 use iced::advanced::renderer;
 use iced::advanced::widget::{Operation, Tree, Widget, tree};
 use iced::advanced::{Clipboard, Layout, Shell};
-use iced::{Alignment, Element, Event, Length, Padding, Point, Rectangle, Size, Vector, mouse};
+use iced::{Element, Event, Length, Point, Rectangle, Size, Vector, mouse};
+
+const DEFAULT_GAP: f32 = 16.0;
 
 #[derive(Debug, Clone, Copy)]
 pub struct SelectionRegion {
@@ -23,10 +25,11 @@ impl SelectionRegion {
     }
 
     pub const fn quote(index: usize) -> Self {
+        // Accent bar (3) + inner padding (14, 8).
         Self {
             block: Some(index),
-            top_inset: 4.0,
-            left_inset: 14.0,
+            top_inset: 11.0,
+            left_inset: 17.0,
         }
     }
 
@@ -35,6 +38,14 @@ impl SelectionRegion {
             block: Some(index),
             top_inset: 52.0,
             left_inset: 16.0,
+        }
+    }
+
+    pub const fn table(index: usize) -> Self {
+        Self {
+            block: Some(index),
+            top_inset: 14.0,
+            left_inset: 14.0,
         }
     }
 
@@ -50,18 +61,21 @@ impl SelectionRegion {
 pub fn selection_group<'a>(
     children: Vec<Element<'a, Message>>,
     regions: Vec<SelectionRegion>,
+    gaps: Vec<f32>,
 ) -> SelectionGroup<'a> {
     SelectionGroup {
         children,
         regions,
-        spacing: 16.0,
+        gaps,
     }
 }
 
 pub struct SelectionGroup<'a> {
     children: Vec<Element<'a, Message>>,
     regions: Vec<SelectionRegion>,
-    spacing: f32,
+    /// Vertical gap above each child after the first (`gaps[i]` sits between
+    /// child `i` and child `i + 1`).
+    gaps: Vec<f32>,
 }
 
 #[derive(Default)]
@@ -99,18 +113,27 @@ impl Widget<Message, iced::Theme, iced::Renderer> for SelectionGroup<'_> {
         renderer: &iced::Renderer,
         limits: &layout::Limits,
     ) -> layout::Node {
-        layout::flex::resolve(
-            layout::flex::Axis::Vertical,
-            renderer,
-            limits,
-            Length::Fill,
-            Length::Shrink,
-            Padding::ZERO,
-            self.spacing,
-            Alignment::Start,
-            &mut self.children,
-            &mut tree.children,
-        )
+        let max = limits.max();
+        let child_limits = layout::Limits::new(Size::ZERO, max);
+
+        let mut nodes = Vec::with_capacity(self.children.len());
+        let mut y = 0.0;
+        for (index, (child, state)) in
+            self.children.iter_mut().zip(&mut tree.children).enumerate()
+        {
+            if index > 0 {
+                y += self.gaps.get(index - 1).copied().unwrap_or(DEFAULT_GAP);
+            }
+            let node = child
+                .as_widget_mut()
+                .layout(state, renderer, &child_limits)
+                .move_to(Point::new(0.0, y));
+            y += node.size().height;
+            nodes.push(node);
+        }
+
+        let size = limits.resolve(Length::Fill, Length::Shrink, Size::new(max.width, y));
+        layout::Node::with_children(size, nodes)
     }
 
     fn operate(
