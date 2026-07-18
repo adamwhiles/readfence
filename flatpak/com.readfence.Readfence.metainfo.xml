@@ -65,7 +65,20 @@
   <content_rating type="oars-1.1" />
 
   <releases>
-    <!-- Set the date below to the actual date you tag/publish 0.3.4. -->
+    <release version="0.4.0" date="2026-07-18">
+      <description>
+        <p>A full rendering overhaul, image support, curated themes, and update notifications.</p>
+        <ul>
+          <li>Tables render as aligned columns with bold headers</li>
+          <li>Inline bold, italic, code, and strikethrough styling now renders everywhere</li>
+          <li>Lists get real bullets, correct nesting, task-list checkboxes, and accent markers</li>
+          <li>Blockquotes and GitHub-style alerts get accent bars and labels</li>
+          <li>Local and remote images render in place, including SVG badges</li>
+          <li>Fifteen curated themes with polished light-mode support; your choice is remembered</li>
+          <li>Responsive toolbar and refined application chrome</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.3.4" date="2026-07-09">
       <description>
         <p>Desktop integration and packaging improvements.</p>

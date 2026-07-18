@@ -24,9 +24,10 @@ finish-args:
   - --socket=fallback-x11
   - --share=ipc
   - --device=dri
-  # Read-only host access so the viewer can open, drag-and-drop, and
-  # live-reload Markdown files from anywhere. Readfence never writes files.
-  - --filesystem=host:ro
+  # Remote images referenced by Markdown documents are fetched over HTTPS.
+  - --share=network
+  # File access goes through the XDG desktop portal (file chooser + document
+  # portal), so no broad filesystem permission is requested.
 
 modules:
   - name: readfence
@@ -50,8 +51,8 @@ modules:
     sources:
       - type: git
         url: https://github.com/adamwhiles/readfence.git
-        tag: '0.3.4'
-        # Replace with the exact commit SHA that tag 0.3.4 points to.
-        # After tagging, run:  git rev-parse 0.3.4
-        commit: REPLACE_WITH_COMMIT_SHA_OF_TAG_0.3.4
+        tag: '0.4.0'
+        # Replace with the exact commit SHA that tag 0.4.0 points to.
+        # After tagging, run:  git rev-parse 0.4.0
+        commit: REPLACE_WITH_COMMIT_SHA_OF_TAG_0.4.0
       - cargo-sources.json
