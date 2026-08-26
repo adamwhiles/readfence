@@ -51,8 +51,8 @@ modules:
     sources:
       - type: git
         url: https://github.com/adamwhiles/readfence.git
-        tag: '0.4.1'
-        # Replace with the exact commit SHA that tag 0.4.1 points to.
-        # After tagging, run:  git rev-parse 0.4.1
-        commit: REPLACE_WITH_COMMIT_SHA_OF_TAG_0.4.1
+        tag: '0.4.2'
+        # Replace with the exact commit SHA that tag 0.4.2 points to.
+        # After tagging, run:  git rev-parse 0.4.2
+        commit: REPLACE_WITH_COMMIT_SHA_OF_TAG_0.4.2
       - cargo-sources.json

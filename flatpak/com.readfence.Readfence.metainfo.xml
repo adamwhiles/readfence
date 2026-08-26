@@ -65,6 +65,15 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="0.4.2" date="2026-08-26">
+      <description>
+        <p>An About menu and in-app updates.</p>
+        <ul>
+          <li>New About menu in the toolbar with the installed version, manual update checks, and a link to the project page</li>
+          <li>Standalone installs can now install updates in place from the update banner; Flatpak installs continue to update through the store</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.4.1" date="2026-08-25">
       <description>
         <p>Reading layout improvements.</p>

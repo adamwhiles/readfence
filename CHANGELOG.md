@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.2 - 2026-08-26
+
+- Readfence can now install updates in place: the update banner's Install button downloads the new release, verifies its checksum, swaps the executable, and offers a one-click restart that reopens your documents
+- New About menu in the toolbar with the installed version, manual update checks, and a link to the GitHub page
+- Flatpak and other store-managed installs continue to update through the store; the in-app installer is hidden there
+
 ## 0.4.1 - 2026-08-25
 
 - The reading view now fills the width of the window instead of being capped at a narrow column
