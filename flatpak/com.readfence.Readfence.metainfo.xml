@@ -65,6 +65,15 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="0.4.1" date="2026-08-25">
+      <description>
+        <p>Reading layout improvements.</p>
+        <ul>
+          <li>The reading view now fills the width of the window instead of being capped at a narrow column</li>
+          <li>Wide tables and code blocks scroll horizontally instead of being cut off at the edge of the page</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.4.0" date="2026-07-18">
       <description>
         <p>A full rendering overhaul, image support, curated themes, and update notifications.</p>

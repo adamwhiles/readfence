@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.1 - 2026-08-25
+
+- The reading view now fills the width of the window instead of being capped at a narrow column
+- Wide tables and code blocks scroll horizontally instead of being cut off at the edge of the page
+
 ## 0.4.0 - 2026-07-18
 
 The biggest Readfence release yet: a full rendering overhaul, image support, a curated theme system, and update notifications.
