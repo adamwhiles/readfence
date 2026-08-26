@@ -19,7 +19,7 @@ use iced::{
         stack, svg, text, text_editor,
     },
 };
-use crate::updates::UpdateStatus;
+use crate::updates::{InstallState, UpdateStatus};
 use std::path::Path;
 use unicode_width::UnicodeWidthChar;
 
@@ -82,43 +82,92 @@ impl App {
         ]
         .spacing(2);
 
-        let status_label = match self.update_status {
-            UpdateStatus::Checking => "Checking for updates…".to_string(),
-            UpdateStatus::Available => match &self.update_notice {
-                Some(notice) => format!("Version {} is available", notice.version),
-                None => "A new version is available".to_string(),
-            },
-            UpdateStatus::UpToDate => "You're up to date".to_string(),
-            UpdateStatus::Failed => "Couldn't reach GitHub — try again later".to_string(),
-            UpdateStatus::StoreManaged => "Updates are handled by your app store".to_string(),
-            UpdateStatus::Unknown => "Updates are checked automatically".to_string(),
+        #[derive(Clone, Copy, PartialEq)]
+        enum Tone {
+            Dim,
+            Accent,
+            Danger,
+        }
+
+        // An install in progress or finished outranks whatever the last
+        // check said.
+        let (status_label, tone) = match (&self.install_state, self.update_status) {
+            (InstallState::Running, _) => ("Downloading the update…".to_string(), Tone::Accent),
+            (InstallState::Done(_), _) => (
+                "Update installed — restart to finish".to_string(),
+                Tone::Accent,
+            ),
+            (InstallState::Failed(error), _) => (format!("Update failed: {error}"), Tone::Danger),
+            (_, UpdateStatus::Checking) => ("Checking for updates…".to_string(), Tone::Dim),
+            (_, UpdateStatus::Available) => (
+                match &self.update_notice {
+                    Some(notice) => format!("Version {} is available", notice.version),
+                    None => "A new version is available".to_string(),
+                },
+                Tone::Accent,
+            ),
+            (_, UpdateStatus::UpToDate) => ("You're up to date".to_string(), Tone::Dim),
+            (_, UpdateStatus::Failed) => (
+                "Couldn't reach GitHub — try again later".to_string(),
+                Tone::Dim,
+            ),
+            (_, UpdateStatus::StoreManaged) => (
+                "Updates are handled by your app store".to_string(),
+                Tone::Dim,
+            ),
+            (_, UpdateStatus::Unknown) => ("Updates are checked automatically".to_string(), Tone::Dim),
         };
-        let status = text(status_label).size(12).style(move |theme: &Theme| {
-            if self.update_status == UpdateStatus::Available {
-                text::Style {
-                    color: Some(theme.extended_palette().primary.base.color),
-                }
-            } else {
-                dim(theme)
-            }
+        let status = text(status_label).size(12).style(move |theme: &Theme| match tone {
+            Tone::Accent => text::Style {
+                color: Some(theme.extended_palette().primary.base.color),
+            },
+            Tone::Danger => text::Style {
+                color: Some(theme.extended_palette().danger.base.color),
+            },
+            Tone::Dim => dim(theme),
         });
 
+        let primary_action = |label: &'static str, message: Message| {
+            button(text(label).size(12))
+                .on_press(message)
+                .style(style_btn_primary)
+                .width(Fill)
+                .padding([7, 12])
+        };
+
         let mut actions = column![].spacing(6);
-        if self.update_status == UpdateStatus::Available {
-            actions = actions.push(
-                button(text("Download update").size(12))
-                    .on_press(Message::OpenUpdatePage)
-                    .style(style_btn_primary)
-                    .width(Fill)
-                    .padding([7, 12]),
-            );
+        match &self.install_state {
+            InstallState::Running => {}
+            InstallState::Done(_) => {
+                actions = actions.push(primary_action("Restart Readfence", Message::RestartApp));
+            }
+            InstallState::Failed(_) => {
+                if self.update_notice.is_some() {
+                    actions = actions.push(primary_action("Try again", Message::InstallUpdate));
+                }
+                actions = actions.push(
+                    button(text("Open download page").size(12))
+                        .on_press(Message::OpenUpdatePage)
+                        .style(style_btn_ghost)
+                        .width(Fill)
+                        .padding([7, 12]),
+                );
+            }
+            InstallState::Idle => {
+                if self.update_status == UpdateStatus::Available {
+                    actions =
+                        actions.push(primary_action("Install update", Message::InstallUpdate));
+                }
+            }
         }
         if self.update_status != UpdateStatus::StoreManaged {
             let check = button(text("Check for updates").size(12))
                 .style(style_btn_ghost)
                 .width(Fill)
                 .padding([7, 12]);
-            let check = if self.update_status == UpdateStatus::Checking {
+            let busy = self.update_status == UpdateStatus::Checking
+                || self.install_state == InstallState::Running;
+            let check = if busy {
                 check
             } else {
                 check.on_press(Message::CheckForUpdates)
@@ -144,27 +193,52 @@ impl App {
         &self,
         notice: &'a crate::updates::UpdateInfo,
     ) -> Element<'a, Message> {
-        let message = text(format!("Readfence {} is available", notice.version)).size(13);
+        // The banner walks the update through its lifecycle: offer the
+        // install, report the download, then ask for the restart.
+        let (label, action) = match &self.install_state {
+            InstallState::Idle => (
+                format!("Readfence {} is available", notice.version),
+                Some(("Install", Message::InstallUpdate)),
+            ),
+            InstallState::Running => (
+                format!("Downloading Readfence {}…", notice.version),
+                None,
+            ),
+            InstallState::Done(_) => (
+                format!(
+                    "Readfence {} is installed — restart to finish",
+                    notice.version
+                ),
+                Some(("Restart now", Message::RestartApp)),
+            ),
+            InstallState::Failed(_) => (
+                "The update couldn't be installed".to_string(),
+                Some(("Download page", Message::OpenUpdatePage)),
+            ),
+        };
 
-        let download = button(text("Download").size(12).wrapping(text::Wrapping::None))
-            .on_press(Message::OpenUpdatePage)
-            .style(style_btn_primary)
-            .padding([5, 14]);
-
-        let dismiss = button(text("✕").size(11))
-            .on_press(Message::DismissUpdate)
-            .style(style_btn_ghost_dim)
-            .padding([5, 9]);
+        let mut items = row![text(label).size(13), Space::new().width(Fill)]
+            .spacing(10)
+            .align_y(Center);
+        if let Some((label, message)) = action {
+            items = items.push(
+                button(text(label).size(12).wrapping(text::Wrapping::None))
+                    .on_press(message)
+                    .style(style_btn_primary)
+                    .padding([5, 14]),
+            );
+        }
+        if self.install_state != InstallState::Running {
+            items = items.push(
+                button(text("✕").size(11))
+                    .on_press(Message::DismissUpdate)
+                    .style(style_btn_ghost_dim)
+                    .padding([5, 9]),
+            );
+        }
 
         column![
-            container(
-                row![message, Space::new().width(Fill), download, dismiss]
-                    .spacing(10)
-                    .align_y(Center),
-            )
-            .width(Fill)
-            .padding([7, 18])
-            .style(style_update_banner),
+            container(items).width(Fill).padding([7, 18]).style(style_update_banner),
             rule::horizontal(1),
         ]
         .into()
