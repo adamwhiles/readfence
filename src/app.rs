@@ -1,7 +1,7 @@
 use crate::files::{file_watcher, load_paths};
 use crate::markdown_text::RenderedBlock;
 use crate::messages::Message;
-use crate::updates::{UpdateInfo, UpdateStatus, check_for_updates};
+use crate::updates::{InstallState, UpdateInfo, UpdateStatus, check_for_updates};
 use iced::{
     Event, Subscription, Task, Theme, event,
     keyboard::{self, Key, key::Named},
@@ -31,6 +31,7 @@ pub struct App {
     pub dismissed_update: Option<String>,
     pub update_status: UpdateStatus,
     pub update_menu_open: bool,
+    pub install_state: InstallState,
 }
 
 pub enum RemoteImage {
@@ -117,6 +118,7 @@ impl Default for App {
             dismissed_update: None,
             update_status: UpdateStatus::Unknown,
             update_menu_open: false,
+            install_state: InstallState::Idle,
         }
     }
 }

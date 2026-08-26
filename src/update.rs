@@ -2,7 +2,7 @@ use crate::app::{App, OpenFile, RemoteImage, ViewMode, looks_like_svg, svg_dimen
 use crate::files::{load_files, load_paths};
 use crate::markdown_text::{ImageSource, RenderedBlockKind, rendered_blocks, selectable_text};
 use crate::messages::Message;
-use crate::updates::{UpdateCheckOutcome, UpdateStatus};
+use crate::updates::{InstallState, UpdateCheckOutcome, UpdateStatus, install_update};
 use iced::widget::{image, svg, text_editor};
 use iced::{Point, Task, clipboard, window};
 use std::path::Path;
@@ -311,6 +311,42 @@ impl App {
             Message::ToggleUpdateMenu => {
                 self.update_menu_open = !self.update_menu_open;
                 Task::none()
+            }
+
+            Message::InstallUpdate => match &self.update_notice {
+                Some(notice) if self.install_state != InstallState::Running => {
+                    self.install_state = InstallState::Running;
+                    Task::perform(install_update(notice.clone()), Message::InstallCompleted)
+                }
+                _ => Task::none(),
+            },
+
+            Message::InstallCompleted(result) => {
+                self.install_state = match result {
+                    Ok(exe) => InstallState::Done(exe),
+                    Err(error) => InstallState::Failed(error),
+                };
+                Task::none()
+            }
+
+            Message::RestartApp => {
+                // The executable on disk is already the new release; hand the
+                // open documents to a fresh process and bow out.
+                let InstallState::Done(exe) = &self.install_state else {
+                    return Task::none();
+                };
+                let mut command = std::process::Command::new(exe);
+                for file in &self.files {
+                    command.arg(&file.path);
+                }
+                match command.spawn() {
+                    Ok(_) => window::latest().and_then(window::close),
+                    Err(error) => {
+                        self.install_state =
+                            InstallState::Failed(format!("couldn't relaunch: {error}"));
+                        Task::none()
+                    }
+                }
             }
 
             Message::OpenUpdatePage => {
