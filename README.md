@@ -12,6 +12,7 @@ A clean, modern Markdown viewer built for developers and Linux users. Written in
 ## Features
 
 - **Rendered Markdown by default** — beautifully formatted output with heading hierarchy, aligned tables, lists, task lists, GitHub-style alerts, code blocks, inline styling, links, and blockquotes
+- **A reading view that uses the room** — the document fills the window, and wide tables and code blocks scroll horizontally instead of getting cut off
 - **Image rendering** — local and remote images render in place, including SVG badges at their natural size; broken references degrade to a quiet placeholder
 - **Selectable rendered text** — highlight and copy any portion of the rendered document, including selections that span headings, paragraphs, lists, quotes, and code blocks
 - **Reader-friendly code blocks** — code is presented with a distinct background, monospace typography, language labels, and a dedicated copy action
@@ -21,7 +22,8 @@ A clean, modern Markdown viewer built for developers and Linux users. Written in
 - **Fullscreen / maximized mode** — one click or `F11` for focused reading
 - **Adjustable font size** — increase or decrease with `Ctrl+=` / `Ctrl+-`
 - **Curated theme library** — fifteen themes that all render beautifully, from Nightfly and Dracula to Catppuccin and Kanagawa, with polished light-mode support
-- **Update notifications** — a quiet banner appears when a newer release is out, with a one-click jump to the download page
+- **Automatic updates** — Readfence checks for new releases at launch and every six hours; a quiet banner offers a one-click install that downloads the release, verifies its checksum, swaps the binary in place, and restarts with your documents reopened
+- **About menu** — see the installed version, check for updates manually, install an available update, or jump to the GitHub page from the toolbar
 - **Cross-platform** — Windows, Linux, and macOS
 - **Clickable links** — opens URLs in your default system browser
 - **Keyboard shortcuts** — full keyboard control for power users
@@ -140,8 +142,11 @@ Built with the [Elm architecture](https://guide.elm-lang.org/architecture/) patt
 | `tokio` | Async file I/O and file watching |
 | `image` | Application icon decoding |
 | `unicode-width` | Table column alignment |
-| `ureq` | Remote image downloads and update checks |
+| `ureq` | Remote image downloads, update checks, and release downloads |
 | `dirs` | Platform config directory for saved preferences |
+| `lzma-rs` / `tar` | Decoding release archives during self-update (`zip` on Windows) |
+| `sha2` | Verifying release checksums before installing an update |
+| `self-replace` | Swapping the running executable with the updated one |
 
 ## Roadmap
 
@@ -149,6 +154,9 @@ Built with the [Elm architecture](https://guide.elm-lang.org/architecture/) patt
 
 | Feature | Description |
 |---|---|
+| ✅ **In-place automatic updates** | Install a new release straight from the update banner — downloaded, checksum-verified, swapped in place, and restarted with your documents reopened |
+| ✅ **About menu** | Installed version, manual update checks, and a link to the GitHub page, right in the toolbar |
+| ✅ **Full-width reading view** | The document fills the window, and wide tables and code blocks scroll horizontally instead of being cut off |
 | ✅ **Rendering overhaul** | Aligned tables, real bullets, inline bold/italic/code, task lists, alerts, and a tuned reading rhythm |
 | ✅ **Image rendering** | Local and remote images render in place, including SVG badges at natural size |
 | ✅ **Curated themes + memory** | Fifteen polished themes with proper light-mode support; your choice persists across launches |
@@ -172,7 +180,6 @@ Built with the [Elm architecture](https://guide.elm-lang.org/architecture/) patt
 | **Table of contents panel** | Auto-generated heading outline in the sidebar with jump-to-section navigation |
 | **Find in document** | Ctrl+F search bar that highlights matches in rendered or source view |
 | **Persistent settings** | Remember window size, font size, and last open files across restarts |
-| **Automatic updates** | Download and install new releases from the update banner |
 
 ### On the radar
 
