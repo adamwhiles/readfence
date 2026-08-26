@@ -2,6 +2,7 @@ use crate::app::{App, OpenFile, RemoteImage, ViewMode, looks_like_svg, svg_dimen
 use crate::files::{load_files, load_paths};
 use crate::markdown_text::{ImageSource, RenderedBlockKind, rendered_blocks, selectable_text};
 use crate::messages::Message;
+use crate::updates::{UpdateCheckOutcome, UpdateStatus};
 use iced::widget::{image, svg, text_editor};
 use iced::{Point, Task, clipboard, window};
 use std::path::Path;
@@ -273,19 +274,42 @@ impl App {
                 Task::none()
             }
 
-            Message::UpdateCheckTick => Task::perform(
-                crate::updates::check_for_update(),
-                Message::UpdateCheckCompleted,
-            ),
+            Message::UpdateCheckTick | Message::CheckForUpdates => {
+                self.update_status = UpdateStatus::Checking;
+                Task::perform(
+                    crate::updates::check_for_updates(),
+                    Message::UpdateCheckCompleted,
+                )
+            }
 
-            Message::UpdateCheckCompleted(info) => {
-                // A failed re-check keeps any notice already showing, and a
-                // dismissed release stays dismissed.
-                if let Some(info) = info
-                    && self.dismissed_update.as_deref() != Some(info.version.as_str())
-                {
-                    self.update_notice = Some(info);
+            Message::UpdateCheckCompleted(outcome) => {
+                match outcome {
+                    UpdateCheckOutcome::Available(info) => {
+                        self.update_status = UpdateStatus::Available;
+                        self.update_notice = Some(info);
+                    }
+                    UpdateCheckOutcome::UpToDate => {
+                        self.update_status = UpdateStatus::UpToDate;
+                        self.update_notice = None;
+                    }
+                    // A failed check keeps any update already known instead
+                    // of downgrading it to an error.
+                    UpdateCheckOutcome::Failed => {
+                        self.update_status = if self.update_notice.is_some() {
+                            UpdateStatus::Available
+                        } else {
+                            UpdateStatus::Failed
+                        };
+                    }
+                    UpdateCheckOutcome::StoreManaged => {
+                        self.update_status = UpdateStatus::StoreManaged;
+                    }
                 }
+                Task::none()
+            }
+
+            Message::ToggleUpdateMenu => {
+                self.update_menu_open = !self.update_menu_open;
                 Task::none()
             }
 
@@ -293,11 +317,23 @@ impl App {
                 if let Some(notice) = &self.update_notice {
                     let _ = open::that_detached(&notice.url);
                 }
+                self.update_menu_open = false;
+                Task::none()
+            }
+
+            Message::OpenRepoPage => {
+                let _ = open::that_detached(crate::updates::REPO_URL);
+                self.update_menu_open = false;
                 Task::none()
             }
 
             Message::DismissUpdate => {
-                self.dismissed_update = self.update_notice.take().map(|notice| notice.version);
+                // Keep the notice so the updates menu can still offer it;
+                // only the banner goes quiet for this version.
+                self.dismissed_update = self
+                    .update_notice
+                    .as_ref()
+                    .map(|notice| notice.version.clone());
                 Task::none()
             }
 

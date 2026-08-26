@@ -15,17 +15,19 @@ use iced::{
     advanced::text::highlighter,
     keyboard::Key,
     widget::{
-        Space, button, column, container, image, pick_list, row, rule, scrollable, svg, text,
-        text_editor,
+        Space, button, column, container, image, mouse_area, pick_list, row, rule, scrollable,
+        stack, svg, text, text_editor,
     },
 };
+use crate::updates::UpdateStatus;
 use std::path::Path;
 use unicode_width::UnicodeWidthChar;
 
 impl App {
     pub fn view(&self) -> Element<'_, Message> {
+        let banner = self.visible_update_notice();
         let mut layout = column![self.view_toolbar()];
-        if let Some(notice) = &self.update_notice {
+        if let Some(notice) = banner {
             layout = layout.push(self.view_update_banner(notice));
         }
         layout = layout.push(if self.files.is_empty() {
@@ -34,10 +36,107 @@ impl App {
             self.view_body()
         });
 
-        container(layout.height(Fill))
+        let base = container(layout.height(Fill))
             .width(Fill)
             .height(Fill)
-            .style(style_app_background)
+            .style(style_app_background);
+
+        if !self.update_menu_open {
+            return base.into();
+        }
+
+        // The menu floats below the toolbar's right edge; a full-window
+        // backdrop underneath it closes the menu on any click outside.
+        let toolbar_height = if self.window_width < 900.0 { 110.0 } else { 64.0 };
+        let banner_height = if banner.is_some() { 34.0 } else { 0.0 };
+        stack![
+            base,
+            mouse_area(Space::new().width(Fill).height(Fill)).on_press(Message::ToggleUpdateMenu),
+            container(self.view_update_menu())
+                .align_right(Fill)
+                .padding(iced::Padding {
+                    top: toolbar_height + banner_height,
+                    right: 14.0,
+                    ..iced::Padding::ZERO
+                }),
+        ]
+        .into()
+    }
+
+    fn view_update_menu(&self) -> Element<'_, Message> {
+        let dim = |theme: &Theme| text::Style {
+            color: Some(Color {
+                a: 0.62,
+                ..theme.extended_palette().background.base.text
+            }),
+        };
+
+        let header = column![
+            text("Readfence").size(15).font(Font {
+                weight: iced::font::Weight::Bold,
+                ..Font::DEFAULT
+            }),
+            text(concat!("Version ", env!("CARGO_PKG_VERSION")))
+                .size(12)
+                .style(dim),
+        ]
+        .spacing(2);
+
+        let status_label = match self.update_status {
+            UpdateStatus::Checking => "Checking for updates…".to_string(),
+            UpdateStatus::Available => match &self.update_notice {
+                Some(notice) => format!("Version {} is available", notice.version),
+                None => "A new version is available".to_string(),
+            },
+            UpdateStatus::UpToDate => "You're up to date".to_string(),
+            UpdateStatus::Failed => "Couldn't reach GitHub — try again later".to_string(),
+            UpdateStatus::StoreManaged => "Updates are handled by your app store".to_string(),
+            UpdateStatus::Unknown => "Updates are checked automatically".to_string(),
+        };
+        let status = text(status_label).size(12).style(move |theme: &Theme| {
+            if self.update_status == UpdateStatus::Available {
+                text::Style {
+                    color: Some(theme.extended_palette().primary.base.color),
+                }
+            } else {
+                dim(theme)
+            }
+        });
+
+        let mut actions = column![].spacing(6);
+        if self.update_status == UpdateStatus::Available {
+            actions = actions.push(
+                button(text("Download update").size(12))
+                    .on_press(Message::OpenUpdatePage)
+                    .style(style_btn_primary)
+                    .width(Fill)
+                    .padding([7, 12]),
+            );
+        }
+        if self.update_status != UpdateStatus::StoreManaged {
+            let check = button(text("Check for updates").size(12))
+                .style(style_btn_ghost)
+                .width(Fill)
+                .padding([7, 12]);
+            let check = if self.update_status == UpdateStatus::Checking {
+                check
+            } else {
+                check.on_press(Message::CheckForUpdates)
+            };
+            actions = actions.push(check);
+        }
+        actions = actions.push(
+            button(text("Visit GitHub page").size(12))
+                .on_press(Message::OpenRepoPage)
+                .style(style_btn_ghost)
+                .width(Fill)
+                .padding([7, 12]),
+        );
+
+        container(column![header, status, rule::horizontal(1), actions].spacing(12))
+            .width(250)
+            .padding(16)
+            .style(style_panel)
             .into()
     }
 
@@ -213,6 +312,19 @@ impl App {
             .style(style_btn_ghost)
             .padding([8, 14]);
 
+        // A quiet accent dot marks a known update even after the banner was
+        // dismissed.
+        let mut about_label = row![text("About").size(13)].spacing(5).align_y(Center);
+        if self.update_notice.is_some() {
+            about_label = about_label.push(text("●").size(9).style(|theme: &Theme| text::Style {
+                color: Some(theme.extended_palette().primary.base.color),
+            }));
+        }
+        let about_btn = button(about_label)
+            .on_press(Message::ToggleUpdateMenu)
+            .style(style_btn_ghost)
+            .padding([8, 14]);
+
         let toolbar: Element<'_, Message> = if two_rows {
             column![
                 row![brand, Space::new().width(Fill), open, sidebar_btn]
@@ -223,7 +335,8 @@ impl App {
                     font_row,
                     Space::new().width(Fill),
                     theme_picker,
-                    fs_btn
+                    fs_btn,
+                    about_btn
                 ]
                 .spacing(8)
                 .align_y(Center),
@@ -256,6 +369,7 @@ impl App {
                 .push(font_row)
                 .push(theme_picker)
                 .push(fs_btn)
+                .push(about_btn)
                 .spacing(8)
                 .padding([12, 18])
                 .align_y(Center)

@@ -1,7 +1,7 @@
 use crate::files::{file_watcher, load_paths};
 use crate::markdown_text::RenderedBlock;
 use crate::messages::Message;
-use crate::updates::{UpdateInfo, check_for_update};
+use crate::updates::{UpdateInfo, UpdateStatus, check_for_updates};
 use iced::{
     Event, Subscription, Task, Theme, event,
     keyboard::{self, Key, key::Named},
@@ -23,10 +23,14 @@ pub struct App {
     pub fullscreen: bool,
     pub window_width: f32,
     pub remote_images: HashMap<String, RemoteImage>,
+    /// Newest release known to be ahead of this build; feeds the banner and
+    /// the updates menu.
     pub update_notice: Option<UpdateInfo>,
-    /// Version the user dismissed; that release stays quiet, a newer one
-    /// notifies again.
+    /// Version whose banner the user dismissed; that release stays quiet in
+    /// the banner (the menu still shows it), a newer one notifies again.
     pub dismissed_update: Option<String>,
+    pub update_status: UpdateStatus,
+    pub update_menu_open: bool,
 }
 
 pub enum RemoteImage {
@@ -111,6 +115,8 @@ impl Default for App {
             remote_images: HashMap::new(),
             update_notice: None,
             dismissed_update: None,
+            update_status: UpdateStatus::Unknown,
+            update_menu_open: false,
         }
     }
 }
@@ -174,6 +180,8 @@ impl App {
             .unwrap_or(Theme::Moonfly);
         let app = Self {
             theme,
+            // A check starts right below; the menu reports it truthfully.
+            update_status: UpdateStatus::Checking,
             ..Self::default()
         };
 
@@ -186,9 +194,17 @@ impl App {
         } else {
             Task::perform(load_paths(paths), Message::FilesLoaded)
         };
-        let update_task = Task::perform(check_for_update(), Message::UpdateCheckCompleted);
+        let update_task = Task::perform(check_for_updates(), Message::UpdateCheckCompleted);
 
         (app, Task::batch([load_task, update_task]))
+    }
+
+    /// The update the banner should announce: a known newer release whose
+    /// notice the user has not dismissed.
+    pub fn visible_update_notice(&self) -> Option<&UpdateInfo> {
+        self.update_notice
+            .as_ref()
+            .filter(|notice| self.dismissed_update.as_deref() != Some(notice.version.as_str()))
     }
 
     pub fn title(&self) -> String {
