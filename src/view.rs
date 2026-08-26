@@ -20,6 +20,7 @@ use iced::{
     },
 };
 use std::path::Path;
+use unicode_width::UnicodeWidthChar;
 
 impl App {
     pub fn view(&self) -> Element<'_, Message> {
@@ -475,12 +476,11 @@ impl App {
         ]
         .spacing(14);
 
-        // Cap the measure so long lines stay comfortable to read on wide
-        // windows.
+        // The document spans the content area; the outer padding below keeps
+        // a slim margin around the panel.
         let document =
             container(column![document_header, rule::horizontal(1), rendered_blocks,].spacing(26))
                 .width(Fill)
-                .max_width(900)
                 .padding([34, 44])
                 .style(style_panel);
 
@@ -677,25 +677,38 @@ impl App {
             }
         });
 
+        let code_size = (self.font_size.max(15.0) * 0.86).max(13.0);
         let code_view = text_editor(&block.content)
             .on_action(move |action| Message::RenderedBlockAction(index, action))
             .key_binding(rendered_key_binding)
             .font(Font::MONOSPACE)
-            .size((self.font_size.max(15.0) * 0.86).max(13.0))
+            .size(code_size)
             .line_height(text::LineHeight::Relative(1.45))
             .wrapping(text::Wrapping::None)
+            .width(monospace_block_width(&block.text, code_size, 32.0))
             .padding([14, 16])
             .style(style_selectable_code);
 
-        container(column![header, code_view])
+        // The editor only spans its measured width, so paint the code
+        // background across the full panel behind the scroller.
+        let code_area = container(monospace_hscroll(code_view.into()))
+            .width(Fill)
+            .style(|theme: &Theme| container::Style {
+                background: Some(theme.extended_palette().background.strong.color.into()),
+                ..Default::default()
+            });
+
+        container(column![header, code_area])
             .width(Fill)
             .style(style_subtle_panel)
             .into()
     }
 
     fn view_image_block<'a>(&'a self, source: &'a ImageSource, alt: &'a str) -> Element<'a, Message> {
-        // The document column tops out at 900 with 44px side padding.
-        let max_width = (self.window_width - 200.0).clamp(320.0, 812.0);
+        // Everything around the document text: the sidebar (when shown), the
+        // outer padding, and the panel's own side padding.
+        let chrome = if self.sidebar_visible { 253.0 } else { 0.0 } + 68.0 + 88.0;
+        let max_width = (self.window_width - chrome).max(320.0);
 
         match source {
             ImageSource::Local(path) => {
@@ -740,18 +753,20 @@ impl App {
         index: usize,
         block: &'a RenderedBlock,
     ) -> Element<'a, Message> {
+        let table_size = (self.font_size.max(15.0) * 0.86).max(13.0);
         let editor = text_editor(&block.content)
             .on_action(move |action| Message::RenderedBlockAction(index, action))
             .key_binding(rendered_key_binding)
             .font(Font::MONOSPACE)
-            .size((self.font_size.max(15.0) * 0.86).max(13.0))
+            .size(table_size)
             .line_height(text::LineHeight::Relative(1.5))
             .wrapping(text::Wrapping::None)
+            .width(monospace_block_width(&block.text, table_size, 28.0))
             .padding([12, 14])
             .style(style_selectable_prose)
             .highlight_with::<SpanHighlighter>(block.span_highlights(), span_highlight_format);
 
-        container(editor)
+        container(monospace_hscroll(editor.into()))
             .width(Fill)
             .style(style_subtle_panel)
             .into()
@@ -887,6 +902,36 @@ fn badge<'a>(label: String) -> Element<'a, Message> {
 /// Renders an SVG at its natural size, scaled down when it exceeds the
 /// available measure. Without an intrinsic size the alt placeholder shows
 /// instead, since an unsized SVG would stretch to fill the column.
+// text_editor lays itself out at the maximum width of its limits, which is
+// unbounded inside a horizontal scrollable — so monospace blocks get an
+// explicit width measured from their longest line. The advance factor errs
+// wide: overshoot only pads the scroll range, undershoot clips.
+fn monospace_block_width(text: &str, font_size: f32, h_padding: f32) -> f32 {
+    let columns = text
+        .lines()
+        .map(|line| {
+            line.chars()
+                .map(|c| match c {
+                    '\t' => 4,
+                    c => UnicodeWidthChar::width(c).unwrap_or(1),
+                })
+                .sum::<usize>()
+        })
+        .max()
+        .unwrap_or(0);
+    columns as f32 * font_size * 0.62 + h_padding + 12.0
+}
+
+fn monospace_hscroll(content: Element<'_, Message>) -> Element<'_, Message> {
+    scrollable(content)
+        .direction(scrollable::Direction::Horizontal(
+            scrollable::Scrollbar::new().width(8).margin(2).scroller_width(6),
+        ))
+        .style(style_scrollable)
+        .width(Fill)
+        .into()
+}
+
 fn sized_svg<'a>(
     handle: svg::Handle,
     size: Option<(f32, f32)>,
