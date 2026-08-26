@@ -3,6 +3,8 @@
 //! The `releases/latest` web URL redirects to the tag of the newest release;
 //! reading that redirect avoids both JSON parsing and API rate limits.
 
+pub const REPO_URL: &str = "https://github.com/adamwhiles/readfence";
+
 const RELEASES_LATEST_URL: &str = "https://github.com/adamwhiles/readfence/releases/latest";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -11,18 +13,44 @@ pub struct UpdateInfo {
     pub url: String,
 }
 
-pub async fn check_for_update() -> Option<UpdateInfo> {
-    // Flatpak installs update through the store; pointing those users at
-    // GitHub downloads would be wrong, so skip the check entirely.
+/// What a finished update check learned.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UpdateCheckOutcome {
+    Available(UpdateInfo),
+    UpToDate,
+    Failed,
+    /// Flatpak installs update through the store; pointing those users at
+    /// GitHub downloads would be wrong, so the check is skipped entirely.
+    StoreManaged,
+}
+
+/// The state the updates menu reports; advanced by launch, periodic, and
+/// manual checks alike.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UpdateStatus {
+    Unknown,
+    Checking,
+    UpToDate,
+    Available,
+    Failed,
+    StoreManaged,
+}
+
+pub async fn check_for_updates() -> UpdateCheckOutcome {
     if std::path::Path::new("/.flatpak-info").exists() {
-        return None;
+        return UpdateCheckOutcome::StoreManaged;
     }
 
-    tokio::task::spawn_blocking(fetch_latest_release)
-        .await
-        .ok()
-        .flatten()
-        .filter(|info| is_newer(&info.version, env!("CARGO_PKG_VERSION")))
+    match tokio::task::spawn_blocking(fetch_latest_release).await {
+        Ok(Some(info)) => {
+            if is_newer(&info.version, env!("CARGO_PKG_VERSION")) {
+                UpdateCheckOutcome::Available(info)
+            } else {
+                UpdateCheckOutcome::UpToDate
+            }
+        }
+        _ => UpdateCheckOutcome::Failed,
+    }
 }
 
 fn fetch_latest_release() -> Option<UpdateInfo> {
@@ -65,7 +93,7 @@ fn is_newer(candidate: &str, current: &str) -> bool {
 /// and trailing pre-release or build suffixes.
 fn parse_version(version: &str) -> Option<(u64, u64, u64)> {
     let mut parts = version.trim().trim_start_matches('v').splitn(3, '.');
-    let mut component = |part: Option<&str>| -> Option<u64> {
+    let component = |part: Option<&str>| -> Option<u64> {
         let digits: String = part?.chars().take_while(char::is_ascii_digit).collect();
         digits.parse().ok()
     };
