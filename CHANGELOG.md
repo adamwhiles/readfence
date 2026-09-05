@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 - 2026-09-04
 
 - Tables now render as a real grid of cells instead of monospace text, so columns stay aligned no matter which glyphs (emoji, symbols, fallback fonts) the cells contain; inline bold, italic, code, links, and strikethrough render inside cells, and links in cells are clickable
 - Readfence remembers your session: the documents you had open, which one was active, the font size, the sidebar and view mode, and the window size all come back on the next launch (files passed on the command line take precedence)

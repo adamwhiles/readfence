@@ -65,6 +65,19 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="0.5.0" date="2026-09-04">
+      <description>
+        <p>Table grids, session memory, an outline, find in document, and zoom.</p>
+        <ul>
+          <li>Tables render as a real grid of cells, so columns stay aligned with emoji, symbols, and fallback fonts</li>
+          <li>Open documents, the active file, font size, sidebar, view mode, and window size are restored on the next launch</li>
+          <li>The sidebar's Outline lists every heading and jumps to its section</li>
+          <li>Find in document with a match count, next and previous stepping, and highlighted hits in both views</li>
+          <li>Zoom with Ctrl+scroll and reset with Ctrl+0</li>
+          <li>Copy shortcuts work without a focused block, and copied list items keep their line breaks</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.4.2" date="2026-08-26">
       <description>
         <p>An About menu and in-app updates.</p>
