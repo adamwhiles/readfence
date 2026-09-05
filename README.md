@@ -11,16 +11,18 @@ A clean, modern Markdown viewer built for developers and Linux users. Written in
 
 ## Features
 
-- **Rendered Markdown by default** — beautifully formatted output with heading hierarchy, aligned tables, lists, task lists, GitHub-style alerts, code blocks, inline styling, links, and blockquotes
+- **Rendered Markdown by default** — beautifully formatted output with heading hierarchy, real table grids, lists, task lists, GitHub-style alerts, code blocks, inline styling, links, and blockquotes
 - **A reading view that uses the room** — the document fills the window, and wide tables and code blocks scroll horizontally instead of getting cut off
 - **Image rendering** — local and remote images render in place, including SVG badges at their natural size; broken references degrade to a quiet placeholder
 - **Selectable rendered text** — highlight and copy any portion of the rendered document, including selections that span headings, paragraphs, lists, quotes, and code blocks
 - **Reader-friendly code blocks** — code is presented with a distinct background, monospace typography, language labels, and a dedicated copy action
 - **Source view** — toggle to see raw Markdown at any time
-- **Multi-file sidebar** — open multiple files and switch between them; hide the sidebar for a distraction-free reading experience
+- **Multi-file sidebar with an outline** — open multiple files and switch between them, jump to any heading from the outline, or hide the sidebar for a distraction-free reading experience
+- **Find in document** — `Ctrl+F` searches the open document with a match count, next/previous stepping, and highlighted hits in both views
+- **Session memory** — the files you had open, the active document, font size, sidebar, view mode, and window size are restored on the next launch
 - **Drag and drop opening** — drop `.md`, `.markdown`, or `.txt` files onto the window to open them instantly
 - **Fullscreen / maximized mode** — one click or `F11` for focused reading
-- **Adjustable font size** — increase or decrease with `Ctrl+=` / `Ctrl+-`
+- **Adjustable font size** — increase or decrease with `Ctrl+=` / `Ctrl+-`, zoom with `Ctrl+scroll`, reset with `Ctrl+0`
 - **Curated theme library** — fifteen themes that all render beautifully, from Nightfly and Dracula to Catppuccin and Kanagawa, with polished light-mode support
 - **Automatic updates** — Readfence checks for new releases at launch and every six hours; a quiet banner offers a one-click install that downloads the release, verifies its checksum, swaps the binary in place, and restarts with your documents reopened
 - **About menu** — see the installed version, check for updates manually, install an available update, or jump to the GitHub page from the toolbar
@@ -93,7 +95,11 @@ mainstream desktop environment ships by default (e.g. `xdg-desktop-portal-gtk`,
 
 Launch Readfence and use the **Open** button (or `Ctrl+O`) to open one or more Markdown files. You can also drag `.md`, `.markdown`, or `.txt` files onto the window to open them directly.
 
-In rendered view, drag across the document to select exactly the text you need. Selections can cross Markdown block boundaries, and links remain clickable when they are not being selected. Use the **Copy text** action to copy the entire rendered document at once.
+In rendered view, drag across the document to select exactly the text you need. Selections can cross Markdown block boundaries, and links remain clickable when they are not being selected. `Ctrl+C` copies the selection, `Ctrl+A` selects the whole document, and the **Copy text** action copies the entire rendered document at once.
+
+Press `Ctrl+F` to search the open document. The search bar shows how many hits there are, `Enter` or `F3` moves to the next hit, `Shift+Enter` or `Shift+F3` moves back, and `Esc` closes the bar. The sidebar's **Outline** lists the document's headings; click one to jump to that section.
+
+On launch without any file arguments, Readfence reopens the documents from your last session. Files passed on the command line (or via "Open with") are opened instead.
 
 ### Keyboard shortcuts
 
@@ -101,11 +107,17 @@ In rendered view, drag across the document to select exactly the text you need. 
 |---|---|
 | `Ctrl+O` | Open file(s) |
 | `Ctrl+B` | Toggle sidebar |
-| `Ctrl+C` | Copy the current rendered-text selection |
-| `Ctrl+A` | Select the entire rendered document |
+| `Ctrl+F` | Find in document |
+| `Enter` / `F3` | Next search hit |
+| `Shift+Enter` / `Shift+F3` | Previous search hit |
+| `Esc` | Close the search bar or the About menu |
+| `Ctrl+C` | Copy the current selection |
+| `Ctrl+A` | Select the entire document |
 | `F11` | Toggle fullscreen |
 | `Ctrl+=` | Increase font size |
 | `Ctrl+-` | Decrease font size |
+| `Ctrl+0` | Reset font size |
+| `Ctrl+Scroll` | Zoom the text |
 
 ### Themes
 
@@ -141,7 +153,7 @@ Built with the [Elm architecture](https://guide.elm-lang.org/architecture/) patt
 | `open` | Open URLs in the system browser |
 | `tokio` | Async file I/O and file watching |
 | `image` | Application icon decoding |
-| `unicode-width` | Table column alignment |
+| `unicode-width` | Column alignment for copied tables and code-block sizing |
 | `ureq` | Remote image downloads, update checks, and release downloads |
 | `dirs` | Platform config directory for saved preferences |
 | `lzma-rs` / `tar` | Decoding release archives during self-update (`zip` on Windows) |
@@ -154,6 +166,11 @@ Built with the [Elm architecture](https://guide.elm-lang.org/architecture/) patt
 
 | Feature | Description |
 |---|---|
+| ✅ **Table grid rendering** | Tables are laid out as real cells, so emoji, symbols, and fallback fonts can no longer skew the columns |
+| ✅ **Session memory** | Open files, the active document, font size, sidebar, view mode, and window size come back on the next launch |
+| ✅ **Table of contents panel** | The sidebar's Outline lists every heading with jump-to-section navigation |
+| ✅ **Find in document** | `Ctrl+F` search bar with a match count and highlighted hits in rendered and source view |
+| ✅ **Zoom with Ctrl+scroll** | Scale the text with the scroll wheel while holding Ctrl; `Ctrl+0` resets |
 | ✅ **In-place automatic updates** | Install a new release straight from the update banner — downloaded, checksum-verified, swapped in place, and restarted with your documents reopened |
 | ✅ **About menu** | Installed version, manual update checks, and a link to the GitHub page, right in the toolbar |
 | ✅ **Full-width reading view** | The document fills the window, and wide tables and code blocks scroll horizontally instead of being cut off |
@@ -171,15 +188,6 @@ Built with the [Elm architecture](https://guide.elm-lang.org/architecture/) patt
 | Feature | Description |
 |---|---|
 | **Recent files** | Quickly reopen previously viewed files from a persistent recent files list |
-| **Zoom with Ctrl+scroll** | Scale font size with the scroll wheel while holding Ctrl |
-
-### Planned
-
-| Feature | Description |
-|---|---|
-| **Table of contents panel** | Auto-generated heading outline in the sidebar with jump-to-section navigation |
-| **Find in document** | Ctrl+F search bar that highlights matches in rendered or source view |
-| **Persistent settings** | Remember window size, font size, and last open files across restarts |
 
 ### On the radar
 

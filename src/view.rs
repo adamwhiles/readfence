@@ -1,34 +1,54 @@
 use crate::app::{App, OpenFile, RemoteImage, ViewMode, svg_dimensions};
+use crate::find::FindMatch;
 use crate::markdown_text::{
-    ImageSource, RenderedBlock, RenderedBlockKind, SpanHighlighter, SpanStyle,
+    CellAlign, ImageSource, RenderedBlock, RenderedBlockKind, RenderedSpan, SpanHighlighter,
+    SpanKind, SpanStyle, TableCell, TableData, highlight_settings, styled_segments,
 };
 use crate::messages::Message;
-use crate::selection_group::{SelectionRegion, selection_group};
+use crate::selection_group::{DOCUMENT_SCROLL_ID, SelectionRegion, selection_group};
 use crate::styles::{
     style_app_background, style_badge, style_btn_ghost, style_btn_ghost_dim, style_btn_primary,
-    style_btn_seg, style_btn_seg_active, style_file_active, style_file_inactive, style_panel,
-    style_picker, style_scrollable, style_selectable_code, style_selectable_prose, style_sidebar,
-    style_status_bar, style_subtle_panel, style_toolbar, style_update_banner, surface_color,
-};
-use iced::{
-    Border, Center, Color, Element, Fill, Font, Theme,
-    advanced::text::highlighter,
-    keyboard::Key,
-    widget::{
-        Space, button, column, container, image, mouse_area, pick_list, row, rule, scrollable,
-        stack, svg, text, text_editor,
-    },
+    style_btn_seg, style_btn_seg_active, style_file_active, style_file_inactive, style_find_bar,
+    style_find_input, style_panel, style_picker, style_scrollable, style_selectable_code,
+    style_selectable_prose, style_sidebar, style_status_bar, style_subtle_panel, style_toolbar,
+    style_update_banner, surface_color,
 };
 use crate::updates::{InstallState, UpdateStatus};
+use crate::zoom_area::zoom_area;
+use iced::{
+    Border, Center, Color, Element, Fill, Font, Padding, Theme,
+    advanced::text::{Span, highlighter},
+    advanced::widget::Id,
+    alignment::Horizontal,
+    keyboard::Key,
+    widget::{
+        Space, button, column, container, image, mouse_area, pick_list, rich_text, row, rule,
+        scrollable, span, stack, svg,
+        table::{column as table_column, table},
+        text, text_editor, text_input,
+    },
+};
 use std::path::Path;
 use unicode_width::UnicodeWidthChar;
+
+/// The find bar's text field, focused when the bar opens.
+pub const FIND_INPUT_ID: Id = Id::new("readfence-find");
+/// The source view's editor, focused for select-all so the selection shows.
+pub const SOURCE_EDITOR_ID: Id = Id::new("readfence-source");
+
+/// Height of the find bar including its rule, for the About menu offset.
+const FIND_BAR_HEIGHT: f32 = 46.0;
 
 impl App {
     pub fn view(&self) -> Element<'_, Message> {
         let banner = self.visible_update_notice();
+        let find_bar = self.find.open && !self.files.is_empty();
         let mut layout = column![self.view_toolbar()];
         if let Some(notice) = banner {
             layout = layout.push(self.view_update_banner(notice));
+        }
+        if find_bar {
+            layout = layout.push(self.view_find_bar());
         }
         layout = layout.push(if self.files.is_empty() {
             self.view_welcome()
@@ -47,15 +67,20 @@ impl App {
 
         // The menu floats below the toolbar's right edge; a full-window
         // backdrop underneath it closes the menu on any click outside.
-        let toolbar_height = if self.window_width < 900.0 { 110.0 } else { 64.0 };
+        let toolbar_height = if self.window_width < 900.0 {
+            110.0
+        } else {
+            64.0
+        };
         let banner_height = if banner.is_some() { 34.0 } else { 0.0 };
+        let find_height = if find_bar { FIND_BAR_HEIGHT } else { 0.0 };
         stack![
             base,
             mouse_area(Space::new().width(Fill).height(Fill)).on_press(Message::ToggleUpdateMenu),
             container(self.view_update_menu())
                 .align_right(Fill)
                 .padding(iced::Padding {
-                    top: toolbar_height + banner_height,
+                    top: toolbar_height + banner_height + find_height,
                     right: 14.0,
                     ..iced::Padding::ZERO
                 }),
@@ -115,17 +140,21 @@ impl App {
                 "Updates are handled by your app store".to_string(),
                 Tone::Dim,
             ),
-            (_, UpdateStatus::Unknown) => ("Updates are checked automatically".to_string(), Tone::Dim),
+            (_, UpdateStatus::Unknown) => {
+                ("Updates are checked automatically".to_string(), Tone::Dim)
+            }
         };
-        let status = text(status_label).size(12).style(move |theme: &Theme| match tone {
-            Tone::Accent => text::Style {
-                color: Some(theme.extended_palette().primary.base.color),
-            },
-            Tone::Danger => text::Style {
-                color: Some(theme.extended_palette().danger.base.color),
-            },
-            Tone::Dim => dim(theme),
-        });
+        let status = text(status_label)
+            .size(12)
+            .style(move |theme: &Theme| match tone {
+                Tone::Accent => text::Style {
+                    color: Some(theme.extended_palette().primary.base.color),
+                },
+                Tone::Danger => text::Style {
+                    color: Some(theme.extended_palette().danger.base.color),
+                },
+                Tone::Dim => dim(theme),
+            });
 
         let primary_action = |label: &'static str, message: Message| {
             button(text(label).size(12))
@@ -200,10 +229,7 @@ impl App {
                 format!("Readfence {} is available", notice.version),
                 Some(("Install", Message::InstallUpdate)),
             ),
-            InstallState::Running => (
-                format!("Downloading Readfence {}…", notice.version),
-                None,
-            ),
+            InstallState::Running => (format!("Downloading Readfence {}…", notice.version), None),
             InstallState::Done(_) => (
                 format!(
                     "Readfence {} is installed — restart to finish",
@@ -238,7 +264,10 @@ impl App {
         }
 
         column![
-            container(items).width(Fill).padding([7, 18]).style(style_update_banner),
+            container(items)
+                .width(Fill)
+                .padding([7, 18])
+                .style(style_update_banner),
             rule::horizontal(1),
         ]
         .into()
@@ -528,10 +557,88 @@ impl App {
             })
             .collect();
 
+        let dim = |theme: &Theme| text::Style {
+            color: Some(Color {
+                a: 0.56,
+                ..theme.extended_palette().background.base.text
+            }),
+        };
+
+        // The outline lists the active document's headings, indented by
+        // level; each entry scrolls the reading view to its section.
+        let headings: Vec<(usize, u8, &str)> = self
+            .files
+            .get(self.active)
+            .map(|file| {
+                file.rendered_blocks
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, block)| match block.kind {
+                        RenderedBlockKind::Heading(level) => {
+                            Some((index, level, block.text.as_str()))
+                        }
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let outline_header = row![
+            column![
+                text("Outline").size(14).font(Font {
+                    weight: iced::font::Weight::Bold,
+                    ..Font::DEFAULT
+                }),
+                text("Jump to a section").size(11).style(dim),
+            ]
+            .spacing(2),
+            Space::new().width(Fill),
+            container(text(headings.len().to_string()).size(11))
+                .padding([4, 9])
+                .style(style_badge),
+        ]
+        .spacing(10)
+        .align_y(Center);
+
+        let outline: Element<'_, Message> = if headings.is_empty() {
+            container(text("No headings in this document").size(12).style(dim))
+                .padding([6, 12])
+                .into()
+        } else {
+            let entries: Vec<Element<'_, Message>> = headings
+                .into_iter()
+                .map(|(index, level, title)| {
+                    let indent = 12.0 + f32::from(level.saturating_sub(1)) * 10.0;
+                    button(
+                        text(truncate_label(title, 34))
+                            .size(12)
+                            .wrapping(text::Wrapping::None),
+                    )
+                    .on_press(Message::JumpToBlock(index))
+                    .width(Fill)
+                    .padding(Padding {
+                        top: 5.0,
+                        right: 8.0,
+                        bottom: 5.0,
+                        left: indent,
+                    })
+                    .style(style_file_inactive)
+                    .into()
+                })
+                .collect();
+            column(entries).spacing(2).into()
+        };
+
         container(
             column![
                 container(header).padding([14, 14]),
-                scrollable(column(items).spacing(4).padding([8, 8]))
+                container(
+                    scrollable(column(items).spacing(4).padding([8, 8])).style(style_scrollable),
+                )
+                .max_height(250),
+                rule::horizontal(1),
+                container(outline_header).padding([12, 14]),
+                scrollable(container(outline).padding([4, 8]))
                     .style(style_scrollable)
                     .height(Fill),
             ]
@@ -541,6 +648,110 @@ impl App {
         .height(Fill)
         .style(style_sidebar)
         .into()
+    }
+
+    fn view_find_bar(&self) -> Element<'_, Message> {
+        let dim = |theme: &Theme| text::Style {
+            color: Some(Color {
+                a: 0.62,
+                ..theme.extended_palette().background.base.text
+            }),
+        };
+
+        let summary = if self.find.query.is_empty() {
+            String::new()
+        } else if self.find.matches.is_empty() {
+            "No matches".to_string()
+        } else {
+            format!("{} of {}", self.find.current + 1, self.find.matches.len())
+        };
+
+        let has_matches = !self.find.matches.is_empty();
+        let nav = |label: &'static str, message: Message| {
+            let nav = button(text(label).size(12).wrapping(text::Wrapping::None))
+                .style(style_btn_ghost)
+                .padding([5, 10]);
+            if has_matches {
+                nav.on_press(message)
+            } else {
+                nav
+            }
+        };
+
+        let bar = row![
+            text("Find").size(12).style(dim),
+            text_input("Search this document…", &self.find.query)
+                .id(FIND_INPUT_ID)
+                .on_input(Message::FindQueryChanged)
+                .on_submit(Message::FindSubmit)
+                .size(13)
+                .padding([6, 10])
+                .width(300.0)
+                .style(style_find_input),
+            text(summary).size(12).style(dim),
+            nav("↑ Previous", Message::FindPrevious),
+            nav("↓ Next", Message::FindNext),
+            Space::new().width(Fill),
+            button(text("✕").size(11))
+                .on_press(Message::CloseFind)
+                .style(style_btn_ghost_dim)
+                .padding([5, 9]),
+        ]
+        .spacing(10)
+        .align_y(Center);
+
+        column![
+            container(bar)
+                .width(Fill)
+                .padding([7, 18])
+                .style(style_find_bar),
+            rule::horizontal(1),
+        ]
+        .into()
+    }
+
+    /// Search hits inside a rendered text block, as highlight spans.
+    fn block_marks(&self, block: usize) -> Vec<RenderedSpan> {
+        if self.view_mode != ViewMode::Rendered {
+            return Vec::new();
+        }
+        self.find_marks(|hit| hit.block == block && hit.cell.is_none())
+    }
+
+    /// Search hits inside one table cell, as highlight spans.
+    fn cell_marks(&self, block: usize, row: usize, column: usize) -> Vec<RenderedSpan> {
+        if self.view_mode != ViewMode::Rendered {
+            return Vec::new();
+        }
+        self.find_marks(|hit| hit.block == block && hit.cell == Some((row, column)))
+    }
+
+    /// Search hits in the raw source, as highlight spans.
+    fn source_marks(&self) -> Vec<RenderedSpan> {
+        if self.view_mode != ViewMode::Source {
+            return Vec::new();
+        }
+        self.find_marks(|_| true)
+    }
+
+    fn find_marks(&self, keep: impl Fn(&FindMatch) -> bool) -> Vec<RenderedSpan> {
+        if !self.find.open {
+            return Vec::new();
+        }
+        self.find
+            .matches
+            .iter()
+            .enumerate()
+            .filter(|(_, hit)| keep(hit))
+            .map(|(index, hit)| RenderedSpan {
+                range: hit.range.clone(),
+                kind: if index == self.find.current {
+                    SpanKind::CurrentMatch
+                } else {
+                    SpanKind::Match
+                },
+            })
+            .collect()
     }
 
     fn view_body(&self) -> Element<'_, Message> {
@@ -575,17 +786,20 @@ impl App {
             ViewMode::Source => "Source view",
         };
 
-        let file_meta = self
-            .files
-            .get(self.active)
-            .map(|file| {
-                format!(
-                    "{} lines · {} words",
-                    line_count(&file.content),
-                    word_count(&file.content)
-                )
-            })
-            .unwrap_or_else(|| "Ready".to_string());
+        let file_meta = match &self.copy_notice {
+            Some(notice) => notice.clone(),
+            None => self
+                .files
+                .get(self.active)
+                .map(|file| {
+                    format!(
+                        "{} lines · {} words",
+                        line_count(&file.content),
+                        word_count(&file.content)
+                    )
+                })
+                .unwrap_or_else(|| "Ready".to_string()),
+        };
 
         container(
             row![
@@ -612,10 +826,11 @@ impl App {
         for (index, block) in file.rendered_blocks.iter().enumerate() {
             selection_regions.push(match block.kind {
                 RenderedBlockKind::Code { .. } => SelectionRegion::code(index),
-                RenderedBlockKind::Table => SelectionRegion::table(index),
-                RenderedBlockKind::Rule | RenderedBlockKind::Image { .. } => {
-                    SelectionRegion::rule()
-                }
+                // Tables are a cell grid rather than an editor; they still
+                // take part in range copies through the block's text.
+                RenderedBlockKind::Table(_)
+                | RenderedBlockKind::Rule
+                | RenderedBlockKind::Image { .. } => SelectionRegion::rule(),
                 RenderedBlockKind::Quote => SelectionRegion::quote(index),
                 _ => SelectionRegion::block(index),
             });
@@ -672,12 +887,13 @@ impl App {
                 .padding([34, 44])
                 .style(style_panel);
 
-        scrollable(
+        let reading_view = scrollable(
             container(document)
                 .width(Fill)
                 .center_x(Fill)
                 .padding([28, 34]),
         )
+        .id(DOCUMENT_SCROLL_ID)
         .direction(scrollable::Direction::Vertical(
             scrollable::Scrollbar::new()
                 .width(8)
@@ -686,8 +902,9 @@ impl App {
         ))
         .style(style_scrollable)
         .width(Fill)
-        .height(Fill)
-        .into()
+        .height(Fill);
+
+        zoom_area(reading_view, Message::Zoom).into()
     }
 
     fn view_rendered_block<'a>(
@@ -699,7 +916,7 @@ impl App {
             RenderedBlockKind::Code { language } => {
                 self.view_selectable_code_block(index, language.as_deref(), block)
             }
-            RenderedBlockKind::Table => self.view_selectable_table_block(index, block),
+            RenderedBlockKind::Table(data) => self.view_table_block(index, data),
             RenderedBlockKind::Image { source, alt } => self.view_image_block(source, alt),
             RenderedBlockKind::Rule => container(rule::horizontal(1))
                 .width(Fill)
@@ -737,7 +954,7 @@ impl App {
                     .padding([2, 0])
                     .style(style_selectable_prose)
                     .highlight_with::<SpanHighlighter>(
-                        block.span_highlights(),
+                        block.span_highlights(&self.block_marks(index)),
                         span_highlight_format,
                     );
 
@@ -746,8 +963,8 @@ impl App {
                     // well-set document's running heads.
                     RenderedBlockKind::Heading(1) | RenderedBlockKind::Heading(2) => column![
                         editor,
-                        container(Space::new().width(Fill).height(1))
-                            .style(|theme: &Theme| container::Style {
+                        container(Space::new().width(Fill).height(1)).style(|theme: &Theme| {
+                            container::Style {
                                 background: Some(
                                     Color {
                                         a: 0.14,
@@ -756,7 +973,8 @@ impl App {
                                     .into(),
                                 ),
                                 ..Default::default()
-                            })
+                            }
+                        })
                     ]
                     .spacing(8)
                     .into(),
@@ -764,11 +982,9 @@ impl App {
                     // An opaque inner panel over an accent outer one exposes a
                     // 3px strip as the bar; a Fill-height bar widget would
                     // blow up inside the scrollable's unbounded layout.
-                    RenderedBlockKind::Quote => container(
-                        container(editor)
-                            .width(Fill)
-                            .padding([8, 14])
-                            .style(|theme: &Theme| {
+                    RenderedBlockKind::Quote => {
+                        container(container(editor).width(Fill).padding([8, 14]).style(
+                            |theme: &Theme| {
                                 let p = theme.extended_palette();
                                 container::Style {
                                     background: Some(
@@ -786,27 +1002,28 @@ impl App {
                                     },
                                     ..Default::default()
                                 }
-                            }),
-                    )
-                    .width(Fill)
-                    .padding(iced::Padding {
-                        left: 3.0,
-                        ..iced::Padding::ZERO
-                    })
-                    .style(|theme: &Theme| container::Style {
-                        background: Some(theme.extended_palette().primary.base.color.into()),
-                        border: Border {
-                            radius: iced::border::Radius {
-                                top_left: 3.0,
-                                top_right: 6.0,
-                                bottom_right: 6.0,
-                                bottom_left: 3.0,
+                            },
+                        ))
+                        .width(Fill)
+                        .padding(iced::Padding {
+                            left: 3.0,
+                            ..iced::Padding::ZERO
+                        })
+                        .style(|theme: &Theme| container::Style {
+                            background: Some(theme.extended_palette().primary.base.color.into()),
+                            border: Border {
+                                radius: iced::border::Radius {
+                                    top_left: 3.0,
+                                    top_right: 6.0,
+                                    bottom_right: 6.0,
+                                    bottom_left: 3.0,
+                                },
+                                ..Default::default()
                             },
                             ..Default::default()
-                        },
-                        ..Default::default()
-                    })
-                    .into(),
+                        })
+                        .into()
+                    }
                     _ => editor.into(),
                 }
             }
@@ -875,7 +1092,11 @@ impl App {
             .wrapping(text::Wrapping::None)
             .width(monospace_block_width(&block.text, code_size, 32.0))
             .padding([14, 16])
-            .style(style_selectable_code);
+            .style(style_selectable_code)
+            .highlight_with::<SpanHighlighter>(
+                block.span_highlights(&self.block_marks(index)),
+                span_highlight_format,
+            );
 
         // The editor only spans its measured width, so paint the code
         // background across the full panel behind the scroller.
@@ -892,7 +1113,11 @@ impl App {
             .into()
     }
 
-    fn view_image_block<'a>(&'a self, source: &'a ImageSource, alt: &'a str) -> Element<'a, Message> {
+    fn view_image_block<'a>(
+        &'a self,
+        source: &'a ImageSource,
+        alt: &'a str,
+    ) -> Element<'a, Message> {
         // Everything around the document text: the sidebar (when shown), the
         // outer padding, and the panel's own side padding.
         let chrome = if self.sidebar_visible { 253.0 } else { 0.0 } + 68.0 + 88.0;
@@ -900,7 +1125,10 @@ impl App {
 
         match source {
             ImageSource::Local(path) => {
-                if path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("svg")) {
+                if path
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("svg"))
+                {
                     match std::fs::read(path) {
                         Ok(bytes) => {
                             let size = svg_dimensions(&bytes);
@@ -920,11 +1148,11 @@ impl App {
                 }
             }
             ImageSource::Remote(url) => match self.remote_images.get(url) {
-                Some(RemoteImage::Raster(handle)) => container(
-                    image(handle.clone()).content_fit(iced::ContentFit::ScaleDown),
-                )
-                .width(Fill)
-                .into(),
+                Some(RemoteImage::Raster(handle)) => {
+                    container(image(handle.clone()).content_fit(iced::ContentFit::ScaleDown))
+                        .width(Fill)
+                        .into()
+                }
                 Some(RemoteImage::Vector {
                     handle,
                     width,
@@ -936,28 +1164,148 @@ impl App {
         }
     }
 
-    fn view_selectable_table_block<'a>(
-        &self,
-        index: usize,
-        block: &'a RenderedBlock,
-    ) -> Element<'a, Message> {
-        let table_size = (self.font_size.max(15.0) * 0.86).max(13.0);
-        let editor = text_editor(&block.content)
-            .on_action(move |action| Message::RenderedBlockAction(index, action))
-            .key_binding(rendered_key_binding)
-            .font(Font::MONOSPACE)
-            .size(table_size)
-            .line_height(text::LineHeight::Relative(1.5))
-            .wrapping(text::Wrapping::None)
-            .width(monospace_block_width(&block.text, table_size, 28.0))
-            .padding([12, 14])
-            .style(style_selectable_prose)
-            .highlight_with::<SpanHighlighter>(block.span_highlights(), span_highlight_format);
+    /// Tables render as a grid of cells so columns line up regardless of
+    /// which glyphs (emoji, symbols, fallback fonts) the cells contain. The
+    /// first row is the header; the last column takes whatever width the
+    /// content-sized columns leave.
+    fn view_table_block<'a>(&'a self, index: usize, data: &'a TableData) -> Element<'a, Message> {
+        let columns = data.alignments.len();
+        if columns == 0 || data.rows.is_empty() {
+            return Space::new().into();
+        }
 
-        container(monospace_hscroll(editor.into()))
-            .width(Fill)
-            .style(style_subtle_panel)
+        let text_size = (self.font_size.max(15.0) * 0.9).max(13.0);
+        // Everything around the document text, as for images. One cell may
+        // take at most a healthy share of what is left, so a long cell
+        // cannot starve the other columns.
+        let chrome = if self.sidebar_visible { 253.0 } else { 0.0 } + 68.0 + 88.0;
+        let cell_max_width = ((self.window_width - chrome) * 0.6).max(180.0);
+
+        let cell = move |row: usize, column: usize| -> Element<'a, Message> {
+            let marks = self.cell_marks(index, row, column);
+            let spans = data
+                .rows
+                .get(row)
+                .and_then(|cells| cells.get(column))
+                .map(|cell| self.cell_spans(cell, &marks, row == 0, text_size))
+                .unwrap_or_default();
+            container(
+                rich_text(spans)
+                    .size(text_size)
+                    .line_height(text::LineHeight::Relative(1.45))
+                    .wrapping(text::Wrapping::WordOrGlyph)
+                    .on_link_click(Message::OpenLink),
+            )
+            .max_width(cell_max_width)
             .into()
+        };
+
+        let table_columns = (0..columns).map(|column| {
+            let align = match data.alignments[column] {
+                CellAlign::Left => Horizontal::Left,
+                CellAlign::Center => Horizontal::Center,
+                CellAlign::Right => Horizontal::Right,
+            };
+            let mut spec =
+                table_column(cell(0, column), move |row: usize| cell(row, column)).align_x(align);
+            if column + 1 == columns {
+                spec = spec.width(Fill);
+            }
+            spec
+        });
+
+        container(
+            table(table_columns, 1..data.rows.len())
+                .width(Fill)
+                .padding_x(12.0)
+                .padding_y(8.0)
+                .separator(1.0),
+        )
+        .width(Fill)
+        .style(style_subtle_panel)
+        .into()
+    }
+
+    /// The styled runs of one table cell: inline bold, italic, code chips,
+    /// links, struck text, and any search hits laid over them.
+    fn cell_spans(
+        &self,
+        cell: &TableCell,
+        marks: &[RenderedSpan],
+        header: bool,
+        size: f32,
+    ) -> Vec<Span<'static, String, Font>> {
+        let palette = self.theme.extended_palette();
+        let ink = palette.background.base.text;
+        let chip = Border {
+            radius: 4.0.into(),
+            ..Default::default()
+        };
+
+        styled_segments(&cell.text, &cell.spans, marks)
+            .into_iter()
+            .map(|segment| {
+                let style = segment.style;
+                let mut run = span(cell.text[segment.range.clone()].to_string()).font(Font {
+                    family: if style.code {
+                        iced::font::Family::Monospace
+                    } else {
+                        Font::DEFAULT.family
+                    },
+                    weight: if style.strong || header {
+                        iced::font::Weight::Bold
+                    } else {
+                        iced::font::Weight::Normal
+                    },
+                    style: if style.emphasis {
+                        iced::font::Style::Italic
+                    } else {
+                        iced::font::Style::Normal
+                    },
+                    ..Font::DEFAULT
+                });
+
+                if style.code {
+                    run = run
+                        .size(size * 0.9)
+                        .background(Color {
+                            a: 0.55,
+                            ..palette.background.strong.color
+                        })
+                        .border(chip)
+                        .padding(Padding::from([1.0, 4.0]));
+                }
+                if let Some(url) = segment.link {
+                    run = run
+                        .link(url.to_string())
+                        .color(palette.primary.strong.color)
+                        .underline(true);
+                } else if style.marker {
+                    run = run.color(palette.primary.base.color);
+                } else if style.strike || style.dim {
+                    run = run.color(Color { a: 0.5, ..ink });
+                }
+                if style.strike {
+                    run = run.strikethrough(true);
+                }
+                if style.current {
+                    run = run
+                        .background(Color {
+                            a: 0.45,
+                            ..palette.primary.base.color
+                        })
+                        .border(chip);
+                } else if style.search {
+                    run = run
+                        .background(Color {
+                            a: 0.35,
+                            ..palette.warning.base.color
+                        })
+                        .border(chip);
+                }
+                run
+            })
+            .collect()
     }
 
     fn view_source<'a>(&'a self, file: &'a OpenFile) -> Element<'a, Message> {
@@ -982,12 +1330,19 @@ impl App {
         ]
         .align_y(Center);
 
+        let marks = self.source_marks();
+        let mark_refs: Vec<&RenderedSpan> = marks.iter().collect();
         let editor = text_editor(&file.editor_content)
+            .id(SOURCE_EDITOR_ID)
             .on_action(Message::EditorAction)
             .font(Font::MONOSPACE)
             .size(self.font_size * 0.9)
             .height(Fill)
-            .padding([24, 28]);
+            .padding([24, 28])
+            .highlight_with::<SpanHighlighter>(
+                highlight_settings(&file.content, &mark_refs),
+                span_highlight_format,
+            );
 
         let panel = container(
             column![header, rule::horizontal(1), editor]
@@ -1000,20 +1355,25 @@ impl App {
         .padding([22, 24])
         .style(style_panel);
 
-        container(panel)
-            .width(Fill)
-            .height(Fill)
-            .center_x(Fill)
-            .padding([28, 34])
-            .into()
+        zoom_area(
+            container(panel)
+                .width(Fill)
+                .height(Fill)
+                .center_x(Fill)
+                .padding([28, 34]),
+            Message::Zoom,
+        )
+        .into()
     }
 
     fn view_welcome(&self) -> Element<'_, Message> {
         let shortcuts = column![
             shortcut_hint("Ctrl+O", "Open files"),
             shortcut_hint("Ctrl+B", "Toggle file list"),
+            shortcut_hint("Ctrl+F", "Find in document"),
             shortcut_hint("F11", "Toggle fullscreen"),
             shortcut_hint("Ctrl+= / -", "Adjust font size"),
+            shortcut_hint("Ctrl+Scroll", "Zoom the text"),
         ]
         .spacing(10);
 
@@ -1113,7 +1473,10 @@ fn monospace_block_width(text: &str, font_size: f32, h_padding: f32) -> f32 {
 fn monospace_hscroll(content: Element<'_, Message>) -> Element<'_, Message> {
     scrollable(content)
         .direction(scrollable::Direction::Horizontal(
-            scrollable::Scrollbar::new().width(8).margin(2).scroller_width(6),
+            scrollable::Scrollbar::new()
+                .width(8)
+                .margin(2)
+                .scroller_width(6),
         ))
         .style(style_scrollable)
         .width(Fill)
@@ -1247,7 +1610,7 @@ fn block_gap(previous: &RenderedBlockKind, next: &RenderedBlockKind) -> f32 {
         (Heading(_), _) => 14.0,
         (_, Heading(1) | Heading(2)) => 34.0,
         (_, Heading(_)) => 28.0,
-        (Code { .. } | Table, _) | (_, Code { .. } | Table) => 20.0,
+        (Code { .. } | Table(_), _) | (_, Code { .. } | Table(_)) => 20.0,
         (Rule, _) | (_, Rule) => 22.0,
         _ => 18.0,
     }
@@ -1258,7 +1621,14 @@ fn span_highlight_format(style: &SpanStyle, theme: &Theme) -> highlighter::Forma
 
     // One accent, spent on structure: links and markers take the theme
     // accent, frame glyphs and struck text recede, content stays in ink.
-    let color = if style.link {
+    // Search hits outrank all of it: editors can only recolor text, so the
+    // hit under the search bar goes bold in the accent and the rest take
+    // the warning tone.
+    let color = if style.current {
+        Some(palette.primary.strong.color)
+    } else if style.search {
+        Some(palette.warning.strong.color)
+    } else if style.link {
         Some(palette.primary.strong.color)
     } else if style.marker {
         Some(palette.primary.base.color)
@@ -1273,13 +1643,13 @@ fn span_highlight_format(style: &SpanStyle, theme: &Theme) -> highlighter::Forma
 
     // A `Some` font replaces the editor's base font entirely, so only emit
     // one when the span actually changes family, weight, or slant.
-    let font = (style.strong || style.emphasis || style.code).then_some(Font {
+    let font = (style.strong || style.emphasis || style.code || style.current).then_some(Font {
         family: if style.code {
             iced::font::Family::Monospace
         } else {
             Font::DEFAULT.family
         },
-        weight: if style.strong {
+        weight: if style.strong || style.current {
             iced::font::Weight::Bold
         } else {
             iced::font::Weight::Normal

@@ -1,0 +1,39 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh auth *)",
+      "Bash(gh api *)",
+      "Skill(deep-research)",
+      "Skill(deep-research:*)",
+      "WebSearch",
+      "WebFetch(domain:indiebi.com)",
+      "WebFetch(domain:impress.games)",
+      "WebFetch(domain:newsletter.gamediscover.co)",
+      "WebFetch(domain:mandragoragames.com)",
+      "WebFetch(domain:www.steampageanalyzer.com)",
+      "WebFetch(domain:www.cloutboost.com)",
+      "WebFetch(domain:app.sensortower.com)",
+      "WebFetch(domain:wnhub.io)",
+      "WebFetch(domain:gamedevreports.substack.com)",
+      "WebFetch(domain:medium.com)",
+      "WebFetch(domain:www.gamedeveloper.com)",
+      "Bash(curl -sL --max-time 30 -A \"Mozilla/5.0 \\(X11; Linux x86_64\\) AppleWebKit/537.36 \\(KHTML, like Gecko\\) Chrome/126.0 Safari/537.36\" https://indiebi.com/pricing)",
+      "Bash(pdftotext /home/adam/.claude/projects/-home-adam-projects-readfence/0f863d73-4002-4275-ab83-430c397f017d/tool-results/webfetch-1783635780405-94nwi0.pdf report.txt)",
+      "WebFetch(domain:partner.steamgames.com)",
+      "WebFetch(domain:steamcommunity.com)",
+      "Bash(curl -sL --max-time 30 -A \"Mozilla/5.0 \\(X11; Linux x86_64\\) AppleWebKit/537.36 \\(KHTML, like Gecko\\) Chrome/125.0 Safari/537.36\" -o /tmp/claude-1000/-home-adam-projects-readfence/0f863d73-4002-4275-ab83-430c397f017d/scratchpad/page.html -w \"%{http_code} %{size_download}\\\\n\" \"https://www.steampageanalyzer.com/blog/indie-game-marketing-budget\")",
+      "WebFetch(domain:howtomarketagame.com)",
+      "Bash(curl -sL --max-time 30 https://indiebi.com/_nuxt/BMqHVLvI.js -o entry.js)",
+      "Bash(grep -oiE '\\(pricing|per month|/month|€[0-9]+|\\\\$[0-9]+|free|revenue share|%\\)' entry.js)",
+      "WebFetch(domain:presskit.gg)",
+      "WebFetch(domain:automaton-media.com)",
+      "Bash(ls ~/.cargo/registry/src/*/ | grep -E \"^iced|^pulldown\" | head; ls -d ~/.cargo/registry/src/*/iced-0.14* ~/.cargo/registry/src/*/iced_widget-* ~/.cargo/registry/src/*/iced_core-* ~/.cargo/registry/src/*/pulldown-cmark-0.12* 2>/dev/null)",
+      "Read(//home/adam/.cargo/registry/src/**)",
+      "Bash(grep -n \"highlight\" ~/.cargo/registry/src/*/iced_graphics-0.14.0/src/text/editor.rs | head; echo ---; sed -n '/fn highlight/,/^    }/p' ~/.cargo/registry/src/*/iced_graphics-0.14.0/src/text/editor.rs | head -80)",
+      "Bash(cargo test *)"
+    ],
+    "additionalDirectories": [
+      "/home/adam/.cargo/registry/src/*/iced_graphics-0.14.0/src/text"
+    ]
+  }
+}

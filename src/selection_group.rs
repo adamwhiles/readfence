@@ -2,11 +2,73 @@ use crate::messages::Message;
 use iced::advanced::layout;
 use iced::advanced::overlay;
 use iced::advanced::renderer;
-use iced::advanced::widget::{Operation, Tree, Widget, tree};
+use iced::advanced::widget::operation::{self, Outcome};
+use iced::advanced::widget::{Id, Operation, Tree, Widget, tree};
 use iced::advanced::{Clipboard, Layout, Shell};
 use iced::{Element, Event, Length, Point, Rectangle, Size, Vector, mouse};
 
 const DEFAULT_GAP: f32 = 16.0;
+
+/// The scrollable that holds the rendered document; jump-to-block scrolling
+/// targets it by this id.
+pub const DOCUMENT_SCROLL_ID: Id = Id::new("readfence-document");
+
+/// The top edge of every child of the group, in the same coordinate frame
+/// as the enclosing scrollable's content. Published through
+/// `Operation::custom` so `LocateBlock` can read it.
+pub struct BlockOffsets(pub Vec<f32>);
+
+/// Finds how far into the document scrollable a rendered block sits, so a
+/// `scroll_to` can bring it into view. Widgets report their positions only
+/// during traversal, which is why this is an operation rather than a
+/// lookup.
+pub struct LocateBlock {
+    block: usize,
+    content_top: Option<f32>,
+    block_top: Option<f32>,
+}
+
+impl LocateBlock {
+    pub fn new(block: usize) -> Self {
+        Self {
+            block,
+            content_top: None,
+            block_top: None,
+        }
+    }
+}
+
+impl Operation<f32> for LocateBlock {
+    fn traverse(&mut self, operate: &mut dyn FnMut(&mut dyn Operation<f32>)) {
+        operate(self);
+    }
+
+    fn scrollable(
+        &mut self,
+        id: Option<&Id>,
+        _bounds: Rectangle,
+        content_bounds: Rectangle,
+        _translation: Vector,
+        _state: &mut dyn operation::Scrollable,
+    ) {
+        if id == Some(&DOCUMENT_SCROLL_ID) {
+            self.content_top = Some(content_bounds.y);
+        }
+    }
+
+    fn custom(&mut self, _id: Option<&Id>, _bounds: Rectangle, state: &mut dyn std::any::Any) {
+        if let Some(offsets) = state.downcast_ref::<BlockOffsets>() {
+            self.block_top = offsets.0.get(self.block).copied();
+        }
+    }
+
+    fn finish(&self) -> Outcome<f32> {
+        match (self.content_top, self.block_top) {
+            (Some(content_top), Some(block_top)) => Outcome::Some(block_top - content_top),
+            _ => Outcome::None,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct SelectionRegion {
@@ -38,14 +100,6 @@ impl SelectionRegion {
             block: Some(index),
             top_inset: 52.0,
             left_inset: 16.0,
-        }
-    }
-
-    pub const fn table(index: usize) -> Self {
-        Self {
-            block: Some(index),
-            top_inset: 14.0,
-            left_inset: 14.0,
         }
     }
 
@@ -118,8 +172,7 @@ impl Widget<Message, iced::Theme, iced::Renderer> for SelectionGroup<'_> {
 
         let mut nodes = Vec::with_capacity(self.children.len());
         let mut y = 0.0;
-        for (index, (child, state)) in
-            self.children.iter_mut().zip(&mut tree.children).enumerate()
+        for (index, (child, state)) in self.children.iter_mut().zip(&mut tree.children).enumerate()
         {
             if index > 0 {
                 y += self.gaps.get(index - 1).copied().unwrap_or(DEFAULT_GAP);
@@ -144,6 +197,12 @@ impl Widget<Message, iced::Theme, iced::Renderer> for SelectionGroup<'_> {
         operation: &mut dyn Operation,
     ) {
         operation.container(None, layout.bounds());
+
+        // One child per rendered block, in order, so the child index is the
+        // block index.
+        let mut offsets = BlockOffsets(layout.children().map(|child| child.bounds().y).collect());
+        operation.custom(None, layout.bounds(), &mut offsets);
+
         operation.traverse(&mut |operation| {
             self.children
                 .iter_mut()
@@ -285,6 +344,9 @@ impl SelectionGroup<'_> {
                     state.press_position = Some(position);
                     state.moved = false;
                     state.focused_range = Some((block, block));
+                    // A fresh press starts a fresh selection: the app drops
+                    // whatever other blocks still had highlighted.
+                    shell.publish(Message::RenderedBlockPressed(block));
                 }
             }
             Event::Mouse(mouse::Event::CursorMoved { .. }) => {

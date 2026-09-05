@@ -1,6 +1,8 @@
 use crate::files::{file_watcher, load_paths};
+use crate::find::FindState;
 use crate::markdown_text::RenderedBlock;
 use crate::messages::Message;
+use crate::session::{self, Session};
 use crate::updates::{InstallState, UpdateInfo, UpdateStatus, check_for_updates};
 use iced::{
     Event, Subscription, Task, Theme, event,
@@ -13,6 +15,10 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
+pub const DEFAULT_FONT_SIZE: f32 = 16.0;
+pub const MIN_FONT_SIZE: f32 = 10.0;
+pub const MAX_FONT_SIZE: f32 = 36.0;
+
 pub struct App {
     pub files: Vec<OpenFile>,
     pub active: usize,
@@ -22,6 +28,11 @@ pub struct App {
     pub theme: Theme,
     pub fullscreen: bool,
     pub window_width: f32,
+    pub window_height: f32,
+    /// The logical window size to remember: the last size the window
+    /// reported, or, until it reports one, the size restored from the
+    /// previous session.
+    pub window_size: Option<(f32, f32)>,
     pub remote_images: HashMap<String, RemoteImage>,
     /// Newest release known to be ahead of this build; feeds the banner and
     /// the updates menu.
@@ -32,6 +43,15 @@ pub struct App {
     pub update_status: UpdateStatus,
     pub update_menu_open: bool,
     pub install_state: InstallState,
+    /// Keyboard modifiers as last reported, for shortcuts that arrive
+    /// through widgets without modifier information (Enter in the find
+    /// field).
+    pub modifiers: keyboard::Modifiers,
+    pub find: FindState,
+    /// A short-lived status bar note after something was copied.
+    pub copy_notice: Option<String>,
+    /// Bumped per copy so a stale clear timer cannot erase a newer notice.
+    pub copy_notice_serial: u64,
 }
 
 pub enum RemoteImage {
@@ -87,7 +107,6 @@ fn svg_attr(tag: &str, name: &str) -> Option<f32> {
 
 pub struct OpenFile {
     pub path: PathBuf,
-    #[allow(dead_code)]
     pub content: String,
     pub editor_content: text_editor::Content,
     pub rendered_text: String,
@@ -95,7 +114,7 @@ pub struct OpenFile {
     pub last_modified: Option<std::time::SystemTime>,
 }
 
-#[derive(Default, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub enum ViewMode {
     #[default]
     Rendered,
@@ -104,21 +123,28 @@ pub enum ViewMode {
 
 impl Default for App {
     fn default() -> Self {
+        let window = window::Settings::default().size;
         Self {
             files: Vec::new(),
             active: 0,
             sidebar_visible: true,
             view_mode: ViewMode::default(),
-            font_size: 16.0,
+            font_size: DEFAULT_FONT_SIZE,
             theme: Theme::Dark,
             fullscreen: false,
-            window_width: 1280.0,
+            window_width: window.width,
+            window_height: window.height,
+            window_size: None,
             remote_images: HashMap::new(),
             update_notice: None,
             dismissed_update: None,
             update_status: UpdateStatus::Unknown,
             update_menu_open: false,
             install_state: InstallState::Idle,
+            modifiers: keyboard::Modifiers::default(),
+            find: FindState::default(),
+            copy_notice: None,
+            copy_notice_serial: 0,
         }
     }
 }
@@ -180,25 +206,54 @@ impl App {
             })
             .or_else(Self::load_saved_theme)
             .unwrap_or(Theme::Moonfly);
+
+        // Reading preferences carry over from the last session.
+        let saved = session::load().unwrap_or_default();
         let app = Self {
             theme,
             // A check starts right below; the menu reports it truthfully.
             update_status: UpdateStatus::Checking,
+            font_size: saved
+                .font_size
+                .map(|size| size.clamp(MIN_FONT_SIZE, MAX_FONT_SIZE))
+                .unwrap_or(DEFAULT_FONT_SIZE),
+            sidebar_visible: saved.sidebar_visible.unwrap_or(true),
+            view_mode: saved.view_mode.unwrap_or_default(),
+            window_size: saved.window,
             ..Self::default()
         };
 
         // Open any files passed on the command line, e.g. from a file
         // manager's "Open with" action or a `.desktop` MimeType association.
-        // Unsupported paths are filtered out by `load_paths`.
+        // Unsupported paths are filtered out by `load_paths`. Without
+        // arguments, the documents from the last session come back instead.
         let paths: Vec<PathBuf> = std::env::args_os().skip(1).map(PathBuf::from).collect();
-        let load_task = if paths.is_empty() {
-            Task::none()
-        } else {
+        let load_task = if !paths.is_empty() {
             Task::perform(load_paths(paths), Message::FilesLoaded)
+        } else if !saved.files.is_empty() {
+            let active = saved.active.clone();
+            Task::perform(load_paths(saved.files), move |files| {
+                Message::SessionRestored(files, active)
+            })
+        } else {
+            Task::none()
         };
         let update_task = Task::perform(check_for_updates(), Message::UpdateCheckCompleted);
 
         (app, Task::batch([load_task, update_task]))
+    }
+
+    /// Writes the current documents, preferences, and window size so the
+    /// next launch can pick up where this one left off.
+    pub fn persist_session(&self) {
+        session::save(&Session {
+            files: self.files.iter().map(|file| file.path.clone()).collect(),
+            active: self.files.get(self.active).map(|file| file.path.clone()),
+            font_size: Some(self.font_size),
+            sidebar_visible: Some(self.sidebar_visible),
+            view_mode: Some(self.view_mode),
+            window: self.window_size,
+        });
     }
 
     /// The update the banner should announce: a known newer release whose
@@ -228,23 +283,47 @@ impl App {
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
-        let keyboard = event::listen_with(|ev, _status, _window| match ev {
+        let keyboard = event::listen_with(|ev, status, _window| match ev {
             Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
-                let ctrl = modifiers.control();
+                // Ctrl everywhere, and Cmd as well on macOS.
+                let command = modifiers.command() || modifiers.control();
+                let shift = modifiers.shift();
+                // Shortcuts a focused text widget already handled (Ctrl+C
+                // in an editor, Enter in the find field) must not fire
+                // twice; those only apply when the event went unclaimed.
+                let unclaimed = matches!(status, event::Status::Ignored);
                 match key.as_ref() {
-                    Key::Character("o") if ctrl => Some(Message::OpenDialog),
-                    Key::Character("b") if ctrl => Some(Message::ToggleSidebar),
-                    Key::Character("=") if ctrl => Some(Message::IncreaseFontSize),
-                    Key::Character("+") if ctrl => Some(Message::IncreaseFontSize),
-                    Key::Character("-") if ctrl => Some(Message::DecreaseFontSize),
+                    Key::Character("o") if command => Some(Message::OpenDialog),
+                    Key::Character("b") if command => Some(Message::ToggleSidebar),
+                    Key::Character("f") if command => Some(Message::OpenFind),
+                    Key::Character("0") if command => Some(Message::ResetFontSize),
+                    Key::Character("=" | "+") if command => Some(Message::IncreaseFontSize),
+                    Key::Character("-") if command => Some(Message::DecreaseFontSize),
+                    Key::Character("c") if command && unclaimed => Some(Message::CopyShortcut),
+                    Key::Character("a") if command && unclaimed => Some(Message::SelectAllShortcut),
                     Key::Named(Named::F11) => Some(Message::ToggleFullscreen),
+                    Key::Named(Named::F3) => Some(if shift {
+                        Message::FindPrevious
+                    } else {
+                        Message::FindNext
+                    }),
+                    Key::Named(Named::Escape) => Some(Message::Escape),
+                    Key::Named(Named::Enter) if unclaimed => Some(if shift {
+                        Message::FindPrevious
+                    } else {
+                        Message::FindNext
+                    }),
                     _ => None,
                 }
             }
+            Event::Keyboard(keyboard::Event::ModifiersChanged(modifiers)) => {
+                Some(Message::ModifiersChanged(modifiers))
+            }
             Event::Window(window::Event::FileDropped(path)) => Some(Message::FileDropped(path)),
-            Event::Window(
-                window::Event::Opened { size, .. } | window::Event::Resized(size),
-            ) => Some(Message::WindowResized(size.width)),
+            Event::Window(window::Event::Opened { size, .. } | window::Event::Resized(size)) => {
+                Some(Message::WindowResized(size.width, size.height))
+            }
+            Event::Window(window::Event::CloseRequested) => Some(Message::CloseRequested),
             _ => None,
         });
 

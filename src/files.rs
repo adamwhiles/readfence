@@ -29,6 +29,9 @@ pub async fn load_paths(
         if !is_supported_markdown_path(&path) {
             continue;
         }
+        // Absolute paths keep the file list and the saved session valid no
+        // matter which directory the app was launched from.
+        let path = tokio::fs::canonicalize(&path).await.unwrap_or(path);
         if let Ok(content) = tokio::fs::read_to_string(&path).await {
             let mtime = tokio::fs::metadata(&path)
                 .await

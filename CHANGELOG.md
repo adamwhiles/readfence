@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Tables now render as a real grid of cells instead of monospace text, so columns stay aligned no matter which glyphs (emoji, symbols, fallback fonts) the cells contain; inline bold, italic, code, links, and strikethrough render inside cells, and links in cells are clickable
+- Readfence remembers your session: the documents you had open, which one was active, the font size, the sidebar and view mode, and the window size all come back on the next launch (files passed on the command line take precedence)
+- New Outline section in the sidebar lists the document's headings; click one to jump to that section
+- Find in document: `Ctrl+F` opens a search bar with a match count, `Enter`/`Shift+Enter` and `F3`/`Shift+F3` step through hits, `Esc` closes it; hits are highlighted in both the rendered and source views
+- Zoom with `Ctrl+scroll`; `Ctrl+0` resets the text size
+- Copying is more forgiving: `Ctrl+C` and `Ctrl+A` work in the reading view even when no block has keyboard focus, select-all now shows the selection in every block, clicking a block clears stale selections elsewhere, copied list items and quote lines keep their line breaks, and the status bar confirms what was copied
+- `Esc` also closes the About menu
+
 ## 0.4.2 - 2026-08-26
 
 - Readfence can now install updates in place: the update banner's Install button downloads the new release, verifies its checksum, swaps the executable, and offers a one-click restart that reopens your documents

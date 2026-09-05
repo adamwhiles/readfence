@@ -31,6 +31,10 @@ pub enum SpanKind {
     /// Structural glyphs (list bullets, numbers, task boxes, alert labels)
     /// rendered in the theme accent to guide the eye.
     Marker,
+    /// A hit of the find-in-document query.
+    Match,
+    /// The find hit the search bar currently points at.
+    CurrentMatch,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,8 +45,29 @@ pub enum RenderedBlockKind {
     Quote,
     Code { language: Option<String> },
     Rule,
-    Table,
+    Table(TableData),
     Image { source: ImageSource, alt: String },
+}
+
+/// The cells of a rendered table; the first row is the header. The block's
+/// `text` keeps an aligned monospace rendering of the same cells for copying.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TableData {
+    pub alignments: Vec<CellAlign>,
+    pub rows: Vec<Vec<TableCell>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TableCell {
+    pub text: String,
+    pub spans: Vec<RenderedSpan>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CellAlign {
+    Left,
+    Center,
+    Right,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,53 +115,105 @@ impl RenderedBlock {
         })
     }
 
-    pub fn span_highlights(&self) -> SpanHighlightSettings {
-        let mut lines = Vec::new();
-        let mut line_start = 0;
+    /// Highlight settings for this block's inline styling plus any extra
+    /// `marks` (search hits) laid over it.
+    pub fn span_highlights(&self, marks: &[RenderedSpan]) -> SpanHighlightSettings {
+        let spans: Vec<&RenderedSpan> = self.spans.iter().chain(marks).collect();
+        highlight_settings(&self.text, &spans)
+    }
+}
 
-        for line in self.text.split('\n') {
-            let line_end = line_start + line.len();
-            let overlapping: Vec<&RenderedSpan> = self
-                .spans
-                .iter()
-                .filter(|span| span.range.start < line_end && span.range.end > line_start)
-                .collect();
+/// A run of text sharing one combined style.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Segment<'a> {
+    pub range: Range<usize>,
+    pub style: SpanStyle,
+    pub link: Option<&'a str>,
+}
 
-            // Highlight ranges must not overlap, so flatten the spans into
-            // disjoint segments carrying the combined style of every span
-            // covering them.
-            let mut bounds: Vec<usize> = overlapping
-                .iter()
-                .flat_map(|span| {
-                    [
-                        span.range.start.clamp(line_start, line_end),
-                        span.range.end.clamp(line_start, line_end),
-                    ]
-                })
-                .collect();
-            bounds.sort_unstable();
-            bounds.dedup();
+/// Splits `text` into contiguous runs, each carrying the combined style of
+/// every span covering it. Plain runs are included, so the runs tile the
+/// whole text.
+pub fn styled_segments<'a>(
+    text: &str,
+    spans: &'a [RenderedSpan],
+    marks: &'a [RenderedSpan],
+) -> Vec<Segment<'a>> {
+    let all: Vec<&RenderedSpan> = spans.iter().chain(marks).collect();
+    segments_between(0, text.len(), &all, true)
+}
 
-            let mut segments = Vec::new();
-            for pair in bounds.windows(2) {
-                let (start, end) = (pair[0], pair[1]);
-                let mut style = SpanStyle::default();
-                for span in &overlapping {
-                    if span.range.start <= start && span.range.end >= end {
-                        style.apply(&span.kind);
-                    }
-                }
-                if !style.is_plain() {
-                    segments.push(((start - line_start)..(end - line_start), style));
+/// Per-line highlight ranges for a text editor, one entry per line of
+/// `text`. Editors highlight line by line, so spans are clipped to lines.
+pub fn highlight_settings(text: &str, spans: &[&RenderedSpan]) -> SpanHighlightSettings {
+    let mut lines = Vec::new();
+    let mut line_start = 0;
+
+    for line in text.split('\n') {
+        let line_end = line_start + line.len();
+        let segments = segments_between(line_start, line_end, spans, false)
+            .into_iter()
+            .map(|segment| {
+                (
+                    (segment.range.start - line_start)..(segment.range.end - line_start),
+                    segment.style,
+                )
+            })
+            .collect();
+        lines.push(segments);
+        line_start = line_end + 1;
+    }
+
+    SpanHighlightSettings { lines }
+}
+
+/// Highlight ranges must not overlap, so the spans touching `start..end`
+/// are flattened into disjoint runs carrying the combined style of every
+/// span covering them.
+fn segments_between<'a>(
+    start: usize,
+    end: usize,
+    spans: &[&'a RenderedSpan],
+    include_plain: bool,
+) -> Vec<Segment<'a>> {
+    let overlapping: Vec<&RenderedSpan> = spans
+        .iter()
+        .copied()
+        .filter(|span| span.range.start < end && span.range.end > start)
+        .collect();
+
+    let mut bounds: Vec<usize> = vec![start, end];
+    bounds.extend(overlapping.iter().flat_map(|span| {
+        [
+            span.range.start.clamp(start, end),
+            span.range.end.clamp(start, end),
+        ]
+    }));
+    bounds.sort_unstable();
+    bounds.dedup();
+
+    let mut segments = Vec::new();
+    for pair in bounds.windows(2) {
+        let (from, to) = (pair[0], pair[1]);
+        let mut style = SpanStyle::default();
+        let mut link = None;
+        for span in &overlapping {
+            if span.range.start <= from && span.range.end >= to {
+                style.apply(&span.kind);
+                if let SpanKind::Link(url) = &span.kind {
+                    link = Some(url.as_str());
                 }
             }
-
-            lines.push(segments);
-            line_start = line_end + 1;
         }
-
-        SpanHighlightSettings { lines }
+        if include_plain || !style.is_plain() {
+            segments.push(Segment {
+                range: from..to,
+                style,
+                link,
+            });
+        }
     }
+    segments
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -148,6 +225,10 @@ pub struct SpanStyle {
     pub strike: bool,
     pub dim: bool,
     pub marker: bool,
+    /// Part of a find-in-document hit.
+    pub search: bool,
+    /// Part of the find hit the search bar points at.
+    pub current: bool,
 }
 
 impl SpanStyle {
@@ -160,6 +241,11 @@ impl SpanStyle {
             SpanKind::Strike => self.strike = true,
             SpanKind::Dim => self.dim = true,
             SpanKind::Marker => self.marker = true,
+            SpanKind::Match => self.search = true,
+            SpanKind::CurrentMatch => {
+                self.search = true;
+                self.current = true;
+            }
         }
     }
 
@@ -219,14 +305,9 @@ struct ListState {
     next: Option<u64>,
 }
 
-struct TableCellData {
-    text: String,
-    spans: Vec<RenderedSpan>,
-}
-
 struct TableBuilder {
     alignments: Vec<Alignment>,
-    rows: Vec<Vec<TableCellData>>,
+    rows: Vec<Vec<TableCell>>,
 }
 
 pub fn selectable_text(blocks: &[RenderedBlock]) -> String {
@@ -235,7 +316,7 @@ pub fn selectable_text(blocks: &[RenderedBlock]) -> String {
 
     for block in blocks {
         if let Some(kind) = previous_kind {
-            text.push_str(block_gap(kind, &block.kind));
+            text.push_str(copy_gap(kind, &block.kind));
         }
         text.push_str(&block.text);
         previous_kind = Some(&block.kind);
@@ -342,7 +423,12 @@ pub fn rendered_blocks(markdown: &str, base_dir: &Path) -> Vec<RenderedBlock> {
                 // A nested list starting inside an item: flush the item's own
                 // text first so it isn't lost when the nested items begin.
                 if matches!(current, CurrentBlock::ListItem) && !text.trim().is_empty() {
-                    push_text_block(&mut blocks, RenderedBlockKind::ListItem, &mut text, &mut spans);
+                    push_text_block(
+                        &mut blocks,
+                        RenderedBlockKind::ListItem,
+                        &mut text,
+                        &mut spans,
+                    );
                 }
                 lists.push(ListState { next: start });
             }
@@ -391,10 +477,10 @@ pub fn rendered_blocks(markdown: &str, base_dir: &Path) -> Vec<RenderedBlock> {
             }
             Event::End(TagEnd::Table) => {
                 if let Some(builder) = table.take() {
-                    let (table_text, table_spans) = assemble_table(builder);
+                    let (table_text, table_spans) = assemble_table(&builder);
                     if !table_text.is_empty() {
                         blocks.push(RenderedBlock::new(
-                            RenderedBlockKind::Table,
+                            RenderedBlockKind::Table(table_data(builder)),
                             table_text,
                             table_spans,
                         ));
@@ -416,7 +502,7 @@ pub fn rendered_blocks(markdown: &str, base_dir: &Path) -> Vec<RenderedBlock> {
             }
             Event::End(TagEnd::TableCell) => {
                 if let Some(row) = table.as_mut().and_then(|builder| builder.rows.last_mut()) {
-                    row.push(TableCellData {
+                    row.push(TableCell {
                         text: std::mem::take(&mut text),
                         spans: std::mem::take(&mut spans),
                     });
@@ -435,7 +521,12 @@ pub fn rendered_blocks(markdown: &str, base_dir: &Path) -> Vec<RenderedBlock> {
                         kind: SpanKind::Strong,
                     });
                 }
-                push_text_block(&mut blocks, RenderedBlockKind::Paragraph, &mut text, &mut spans);
+                push_text_block(
+                    &mut blocks,
+                    RenderedBlockKind::Paragraph,
+                    &mut text,
+                    &mut spans,
+                );
                 current = CurrentBlock::None;
             }
             Event::Start(Tag::DefinitionListDefinition) => {
@@ -623,7 +714,9 @@ impl CurrentBlock {
             Self::Code { language } => RenderedBlockKind::Code {
                 language: language.clone(),
             },
-            Self::Table => RenderedBlockKind::Table,
+            // Tables are assembled from their cells when the table ends;
+            // stray text can only be a paragraph.
+            Self::Table => RenderedBlockKind::Paragraph,
         }
     }
 }
@@ -653,7 +746,32 @@ fn close_span(
     }
 }
 
-fn assemble_table(builder: TableBuilder) -> (String, Vec<RenderedSpan>) {
+/// Pads every row to the same number of cells and maps the column
+/// alignments, ready for the cell grid.
+fn table_data(builder: TableBuilder) -> TableData {
+    let columns = builder.rows.iter().map(Vec::len).max().unwrap_or(0);
+    let alignments = (0..columns)
+        .map(|column| match builder.alignments.get(column) {
+            Some(Alignment::Center) => CellAlign::Center,
+            Some(Alignment::Right) => CellAlign::Right,
+            _ => CellAlign::Left,
+        })
+        .collect();
+    let rows = builder
+        .rows
+        .into_iter()
+        .map(|mut row| {
+            row.resize_with(columns, || TableCell {
+                text: String::new(),
+                spans: Vec::new(),
+            });
+            row
+        })
+        .collect();
+    TableData { alignments, rows }
+}
+
+fn assemble_table(builder: &TableBuilder) -> (String, Vec<RenderedSpan>) {
     let columns = builder.rows.iter().map(Vec::len).max().unwrap_or(0);
     if columns == 0 {
         return (String::new(), Vec::new());
@@ -804,9 +922,13 @@ fn code_language(kind: pulldown_cmark::CodeBlockKind<'_>) -> Option<String> {
     }
 }
 
-fn block_gap(previous: &RenderedBlockKind, next: &RenderedBlockKind) -> &'static str {
+/// The text that separates two adjacent blocks when they are copied: list
+/// items and quote lines stay on consecutive lines, everything else gets a
+/// blank line between.
+pub fn copy_gap(previous: &RenderedBlockKind, next: &RenderedBlockKind) -> &'static str {
     match (previous, next) {
-        (RenderedBlockKind::ListItem, RenderedBlockKind::ListItem) => "\n",
+        (RenderedBlockKind::ListItem, RenderedBlockKind::ListItem)
+        | (RenderedBlockKind::Quote, RenderedBlockKind::Quote) => "\n",
         _ => "\n\n",
     }
 }
@@ -814,7 +936,8 @@ fn block_gap(previous: &RenderedBlockKind, next: &RenderedBlockKind) -> &'static
 #[cfg(test)]
 mod tests {
     use super::{
-        ImageSource, RenderedBlock, RenderedBlockKind, SpanKind, selectable_text,
+        CellAlign, ImageSource, RenderedBlock, RenderedBlockKind, SpanKind, SpanStyle,
+        selectable_text, styled_segments,
     };
     use std::path::{Path, PathBuf};
 
@@ -869,7 +992,7 @@ mod tests {
         let blocks = rendered_blocks("| A |\n| --- |\n| ![icon](i.png) |");
 
         assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0].kind, RenderedBlockKind::Table);
+        assert!(matches!(blocks[0].kind, RenderedBlockKind::Table(_)));
         assert!(blocks[0].text.contains("[icon]"));
     }
 
@@ -936,7 +1059,13 @@ mod tests {
         let blocks = rendered_blocks("| Key | Value |\n| --- | --- |\n| a | bb |\n| ccc | d |");
 
         assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0].kind, RenderedBlockKind::Table);
+        let RenderedBlockKind::Table(table) = &blocks[0].kind else {
+            panic!("expected a table block");
+        };
+        assert_eq!(table.rows.len(), 3);
+        assert_eq!(table.rows[0][0].text, "Key");
+        assert_eq!(table.rows[2][1].text, "d");
+        assert_eq!(table.alignments, vec![CellAlign::Left, CellAlign::Left]);
         let lines: Vec<&str> = blocks[0].text.lines().collect();
         assert_eq!(lines[0], "Key │ Value");
         assert_eq!(lines[1], "────┼──────");
@@ -950,6 +1079,49 @@ mod tests {
             .find(|span| span.kind == SpanKind::Strong)
             .expect("bold header span");
         assert_eq!(&blocks[0].text[header.range.clone()], "Key");
+    }
+
+    #[test]
+    fn pads_ragged_table_rows_and_keeps_cell_spans() {
+        let blocks =
+            rendered_blocks("| A | B | C |\n| :-: | --: | --- |\n| **x** | [y](https://y.io) |");
+
+        let RenderedBlockKind::Table(table) = &blocks[0].kind else {
+            panic!("expected a table block");
+        };
+        assert_eq!(
+            table.alignments,
+            vec![CellAlign::Center, CellAlign::Right, CellAlign::Left]
+        );
+        assert_eq!(table.rows[1].len(), 3);
+        assert_eq!(table.rows[1][2].text, "");
+        assert_eq!(table.rows[1][0].spans[0].kind, SpanKind::Strong);
+        assert_eq!(
+            table.rows[1][1].spans[0].kind,
+            SpanKind::Link("https://y.io".to_string())
+        );
+    }
+
+    #[test]
+    fn styled_segments_tile_the_text() {
+        let blocks = rendered_blocks("plain **bold** [link](https://l.io) end");
+        let segments = styled_segments(&blocks[0].text, &blocks[0].spans, &[]);
+
+        let text: String = segments
+            .iter()
+            .map(|segment| &blocks[0].text[segment.range.clone()])
+            .collect();
+        assert_eq!(text, blocks[0].text);
+        assert_eq!(segments[0].style, SpanStyle::default());
+        assert!(segments[1].style.strong);
+        assert_eq!(segments[3].link, Some("https://l.io"));
+    }
+
+    #[test]
+    fn quote_lines_copy_without_blank_lines() {
+        let blocks = rendered_blocks("> one\n>\n> two\n\n- a\n- b");
+
+        assert_eq!(selectable_text(&blocks), "one\ntwo\n\n• a\n• b");
     }
 
     #[test]

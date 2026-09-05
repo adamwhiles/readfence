@@ -1,4 +1,4 @@
-use iced::widget::{button, container, pick_list, scrollable, text_editor};
+use iced::widget::{button, container, pick_list, scrollable, text_editor, text_input};
 use iced::{Background, Border, Color, Shadow, Theme, Vector};
 
 /// The color documents sit on: dark themes read on a raised lighter panel,
@@ -46,7 +46,11 @@ pub fn style_sidebar(theme: &Theme) -> container::Style {
 
 pub fn style_panel(theme: &Theme) -> container::Style {
     let p = theme.extended_palette();
-    let (shadow_alpha, blur) = if p.is_dark { (0.28, 24.0) } else { (0.10, 16.0) };
+    let (shadow_alpha, blur) = if p.is_dark {
+        (0.28, 24.0)
+    } else {
+        (0.10, 16.0)
+    };
     container::Style {
         background: Some(surface_color(theme).into()),
         border: Border {
@@ -402,5 +406,44 @@ pub fn style_file_inactive(theme: &Theme, status: button::Status) -> button::Sty
             ..Default::default()
         },
         ..Default::default()
+    }
+}
+
+pub fn style_find_bar(theme: &Theme) -> container::Style {
+    let p = theme.extended_palette();
+    container::Style {
+        background: Some(p.background.weak.color.into()),
+        text_color: Some(p.background.base.text),
+        ..Default::default()
+    }
+}
+
+pub fn style_find_input(theme: &Theme, status: text_input::Status) -> text_input::Style {
+    let p = theme.extended_palette();
+    let focused = matches!(status, text_input::Status::Focused { .. });
+    text_input::Style {
+        background: Background::Color(p.background.base.color),
+        border: Border {
+            radius: 8.0.into(),
+            width: 1.0,
+            color: if focused {
+                p.primary.base.color
+            } else {
+                Color {
+                    a: 0.28,
+                    ..p.background.strong.color
+                }
+            },
+        },
+        icon: p.background.base.text,
+        placeholder: Color {
+            a: 0.45,
+            ..p.background.base.text
+        },
+        value: p.background.base.text,
+        selection: Color {
+            a: 0.42,
+            ..p.primary.base.color
+        },
     }
 }
